@@ -14,6 +14,7 @@ LOCAL_SRC_FILES := \
 	CameraHal.cpp \
 	CameraHardware.cpp \
 	Converter.cpp \
+	Metadata.cpp \
 	SurfaceDesc.cpp \
 	SurfaceSize.cpp \
 	Utils.cpp \
