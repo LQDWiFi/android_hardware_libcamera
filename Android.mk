@@ -22,6 +22,7 @@ LOCAL_SRC_FILES := \
 
 LOCAL_SHARED_LIBRARIES := \
 	libcamera_client \
+	libcamera_metadata \
 	libcutils \
 	libjpeg \
 	liblog \

@@ -100,7 +100,7 @@ int CameraFactory::getCameraInfo(int camera_id, struct camera_info* info)
         return -EINVAL;
     }
 
-    return CameraHardware::getCameraInfo(info, mCameraFacing[camera_id],
+    return mCamera[camera_id]->getCameraInfo(info, mCameraFacing[camera_id],
                                          mCameraOrientation[camera_id]);
 }
 

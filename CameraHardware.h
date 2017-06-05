@@ -19,6 +19,7 @@
 #define ANDROID_HARDWARE_CAMERA_HARDWARE_H
 
 #include <camera/CameraParameters.h>
+#include <system/camera_metadata.h>
 #include <hardware/camera.h>
 #include <utils/threads.h>
 #include <utils/threads.h>
@@ -212,7 +213,7 @@ public:
      * NOTE: When this method is called the object is locked.
      * Note that failures in this method are reported as negave EXXX statuses.
      */
-    static status_t getCameraInfo(struct camera_info* info, int facing,
+    status_t getCameraInfo(struct camera_info* info, int facing,
                                   int orientation);
 
 private:
@@ -220,6 +221,7 @@ private:
     static const int kBufferCount = 4;
 
     void initDefaultParameters();
+    void initStaticCameraMetadata();
     void initHeapLocked();
 
     class PreviewThread : public Thread {
@@ -296,6 +298,9 @@ private:
     int                 mCurrentRecordingFrame;
 
     char*               mCameraPowerFile;
+
+    // This is constructed once and never changed
+    camera_metadata_t*  mCameraMetadata;
 
     /****************************************************************************
      * Camera API callbacks as defined by camera_device_ops structure.

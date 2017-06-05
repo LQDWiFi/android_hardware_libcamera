@@ -18,7 +18,7 @@
 #define METADATA_H_
 
 #include <stdint.h>
-#include <hardware/camera3.h>
+#include <hardware/camera.h>
 #include <system/camera_metadata.h>
 
 namespace android {

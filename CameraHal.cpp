@@ -42,4 +42,11 @@ camera_module_t HAL_MODULE_INFO_SYM = {
     },
     get_number_of_cameras:  android::CameraFactory::get_number_of_cameras,
     get_camera_info:        android::CameraFactory::get_camera_info,
+
+    set_callbacks:      NULL,
+    get_vendor_tag_ops: NULL,
+    open_legacy:        NULL,
+    set_torch_mode:     NULL,
+    init:               NULL,
+    reserved:           {0}
 };
