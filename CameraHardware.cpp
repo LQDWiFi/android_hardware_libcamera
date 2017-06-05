@@ -965,7 +965,13 @@ void CameraHardware::initDefaultParameters()
     p.set(CameraParameters::KEY_VERTICAL_VIEW_ANGLE, 90);
     p.set(CameraParameters::KEY_SUPPORTED_JPEG_THUMBNAIL_SIZES, "640x480,0x0");
     p.set(CameraParameters::KEY_EXPOSURE_COMPENSATION, "6");
+    p.set(CameraParameters::KEY_EXPOSURE_COMPENSATION_STEP, "1.5");
+
+    /* Set exposure compensation. */
+    p.set(CameraParameters::KEY_MAX_EXPOSURE_COMPENSATION, "6");
+    p.set(CameraParameters::KEY_MIN_EXPOSURE_COMPENSATION, "-6");
     p.set(CameraParameters::KEY_EXPOSURE_COMPENSATION_STEP, "0.5");
+    p.set(CameraParameters::KEY_EXPOSURE_COMPENSATION, "0");
 
     if (setParameters(p.flatten()) != NO_ERROR) {
         ALOGE("CameraHardware::initDefaultParameters: Failed to set default parameters.");

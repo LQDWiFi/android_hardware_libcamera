@@ -27,7 +27,7 @@ LOCAL_SHARED_LIBRARIES := \
 	libui \
 	libutils \
 
-LOCAL_MODULE := camera.x86
+LOCAL_MODULE := camera.qcom
 LOCAL_MODULE_TAGS := optional
 LOCAL_MODULE_RELATIVE_PATH := hw
 
