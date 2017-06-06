@@ -83,11 +83,7 @@ int CameraFactory::cameraDeviceOpen(const hw_module_t* module,int camera_id, hw_
         return -EINVAL;
     }
 
-    if (!mCamera[camera_id]) {
-        mCamera[camera_id] = new CameraHardware(module, mCameraDevices[camera_id]);
-    }
-
-    return mCamera[camera_id]->connectCamera(device);
+    return mCamera[camera_id]->connectCamera(module, device);
 }
 
 /* Returns the number of available cameras */
@@ -167,7 +163,7 @@ void CameraFactory::parseConfig(const char* configFile)
 void CameraFactory::newCameraConfig(int facing, const char* location, int orientation)
 {
     // Keep track of cameras
-    mCameraNum++;
+    int camera_id = mCameraNum++;
 
     // Grow the information arrays
     mCamera = (CameraHardware**) realloc(mCamera, mCameraNum * sizeof(CameraHardware*));
@@ -175,14 +171,14 @@ void CameraFactory::newCameraConfig(int facing, const char* location, int orient
     mCameraFacing = (int*) realloc(mCameraFacing, mCameraNum * sizeof(int));
     mCameraOrientation = (int*) realloc(mCameraOrientation, mCameraNum * sizeof(int));
 
+
     // Store the values for each camera_id
-    mCamera[mCameraNum - 1] = NULL;
-    mCameraDevices[mCameraNum - 1] = strdup(location);
-    mCameraFacing[mCameraNum - 1] = facing;
-    mCameraOrientation[mCameraNum - 1] = orientation;
+    mCameraDevices[camera_id] = strdup(location);
+    mCamera[camera_id] = new CameraHardware(mCameraDevices[camera_id]);
+    mCameraFacing[camera_id] = facing;
+    mCameraOrientation[camera_id] = orientation;
     ALOGD("CameraFactory::newCameraConfig: %d -> %s (%d)",
-          mCameraFacing[mCameraNum - 1], mCameraDevices[mCameraNum - 1],
-          mCameraOrientation[mCameraNum - 1]);
+          mCameraFacing[camera_id], mCameraDevices[camera_id], mCameraOrientation[camera_id]);
 }
 
 /****************************************************************************

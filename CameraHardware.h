@@ -181,9 +181,8 @@ public:
      * Param:
      *  cameraId - Zero based camera identifier, which is an index of the camera
      *      instance in camera factory's array.
-     *  module - Emulated camera HAL module descriptor.
      */
-    CameraHardware(const hw_module_t* module, char* devLocation);
+    CameraHardware(char* devLocation);
 
     /* Destructs EmulatedCamera instance. */
     virtual ~CameraHardware();
@@ -198,7 +197,7 @@ public:
      * NOTE: When this method is called the object is locked.
      * Note that failures in this method are reported as negave EXXX statuses.
      */
-    status_t connectCamera(hw_device_t** device);
+    status_t connectCamera(const hw_module_t* module, hw_device_t** device);
 
     /* Closes connection to the emulated camera.
      * This method is called in response to camera_device::close callback.

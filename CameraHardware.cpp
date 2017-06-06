@@ -172,7 +172,7 @@ bool CameraHardware::PowerOff()
     return true;
 }
 
-CameraHardware::CameraHardware(const hw_module_t* module, char* devLocation) :
+CameraHardware::CameraHardware(char* devLocation) :
         mWin(0),
         mPreviewWinFmt(PIXEL_FORMAT_UNKNOWN),
         mPreviewWinWidth(0),
@@ -224,7 +224,7 @@ CameraHardware::CameraHardware(const hw_module_t* module, char* devLocation) :
     /* Common header */
     common.tag = HARDWARE_DEVICE_TAG;
     common.version = 0;
-    common.module = const_cast<hw_module_t*>(module);
+    common.module = NULL;       // supplied at connectCamera() time
     common.close = CameraHardware::close;
 
     /* camera_device fields. */
@@ -316,10 +316,11 @@ bool CameraHardware::NegotiatePreviewFormat(struct preview_stream_ops* win)
  * Camera API implementation.
  ***************************************************************************/
 
-status_t CameraHardware::connectCamera(hw_device_t** device)
+status_t CameraHardware::connectCamera(const hw_module_t* module, hw_device_t** device)
 {
     ALOGD("CameraHardware::connectCamera");
 
+    common.module = const_cast<hw_module_t*>(module);
     *device = &common;
     return NO_ERROR;
 }
