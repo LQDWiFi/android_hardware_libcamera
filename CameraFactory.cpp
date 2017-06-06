@@ -45,8 +45,14 @@ CameraFactory::CameraFactory()
     mCameraDevices = NULL;
     mCameraFacing = NULL;
     mCameraOrientation = NULL;
+
+    /*  The camera service will be calling getCameraInfo early, even before the
+        camera device is opened.  We must have the CameraHardware objects in place.
+    */
     parseConfig(CONFIG_FILE);
 }
+
+
 
 CameraFactory::~CameraFactory()
 {
@@ -80,6 +86,7 @@ int CameraFactory::cameraDeviceOpen(const hw_module_t* module,int camera_id, hw_
     if (!mCamera[camera_id]) {
         mCamera[camera_id] = new CameraHardware(module, mCameraDevices[camera_id]);
     }
+
     return mCamera[camera_id]->connectCamera(device);
 }
 
@@ -90,8 +97,13 @@ int CameraFactory::getCameraNum()
     return mCameraNum;
 }
 
+
+
 int CameraFactory::getCameraInfo(int camera_id, struct camera_info* info)
 {
+    /*  This will be called early by the camera service. The CameraHardware
+        objects must already be created.
+    */
     ALOGD("CameraFactory::getCameraInfo: id = %d, info = %p", camera_id, info);
 
     if (camera_id < 0 || camera_id >= getCameraNum()) {
@@ -103,6 +115,8 @@ int CameraFactory::getCameraInfo(int camera_id, struct camera_info* info)
     return mCamera[camera_id]->getCameraInfo(info, mCameraFacing[camera_id],
                                          mCameraOrientation[camera_id]);
 }
+
+
 
 // Parse a simple configuration file
 void CameraFactory::parseConfig(const char* configFile)
@@ -145,6 +159,8 @@ void CameraFactory::parseConfig(const char* configFile)
             newCameraConfig(CAMERA_FACING_FRONT, DEFAULT_DEVICE_FRONT, 0);
         }
     }
+
+    ALOGD("CameraFactory::parseConfig: done");
 }
 
 // Although realloc could be a costly operation, we only execute this function usually 2 times

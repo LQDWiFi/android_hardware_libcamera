@@ -335,11 +335,19 @@ status_t CameraHardware::getCameraInfo(struct camera_info* info, int facing,
                                        int orientation)
 {
     ALOGD("CameraHardware::getCameraInfo");
+    ALOGD("CameraHardware::getCameraInfo 1 info=%p", info);
+    ALOGD("CameraHardware::getCameraInfo 1 info->static_camera_characteristics=%p", info->static_camera_characteristics);
+    ALOGD("CameraHardware::getCameraInfo 1 this=%p", this);
+    ALOGD("CameraHardware::getCameraInfo 1 mCameraMetadata=%p", mCameraMetadata);
 
     info->facing = facing;
+    ALOGD("CameraHardware::getCameraInfo 2");
     info->orientation = orientation;
+    ALOGD("CameraHardware::getCameraInfo 3");
     info->device_version = CAMERA_DEVICE_API_VERSION_1_0;
+    ALOGD("CameraHardware::getCameraInfo 4");
     info->static_camera_characteristics = mCameraMetadata;
+    ALOGD("CameraHardware::getCameraInfo 5");
 
     return NO_ERROR;
 }
@@ -742,6 +750,10 @@ status_t CameraHardware::setParameters(const char* parms)
     params.getVideoSize(&w, &h);
     ALOGD("CameraHardware::setParameters: VIDEO: Size %dx%d, format: %s", w, h, params.get(CameraParameters::KEY_VIDEO_FRAME_FORMAT));
 
+    w = params.getInt(CameraParameters::KEY_JPEG_THUMBNAIL_WIDTH);
+    h = params.getInt(CameraParameters::KEY_JPEG_THUMBNAIL_HEIGHT);
+    ALOGD("CameraHardware::setParameters: THUMBNAIL: Size %dx%d (2)", w, h);
+
     // Store the new parameters
     mParameters = params;
 
@@ -1122,7 +1134,6 @@ void CameraHardware::initStaticCameraMetadata()
 
     mCameraMetadata = clone_camera_metadata(m.get());
 }
-
 
 
 void CameraHardware::initHeapLocked()

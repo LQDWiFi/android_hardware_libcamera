@@ -30,6 +30,7 @@ namespace android {
 Metadata::Metadata():
     mData(NULL)
 {
+    mData = allocate_camera_metadata(30, 400);
 }
 
 Metadata::~Metadata()
@@ -48,6 +49,9 @@ void Metadata::replace(camera_metadata_t *m)
     mData = m;
 }
 
+
+
+#if 0
 int Metadata::init(const camera_metadata_t *metadata)
 {
     camera_metadata_t* tmp;
@@ -62,6 +66,9 @@ int Metadata::init(const camera_metadata_t *metadata)
     replace(tmp);
     return 0;
 }
+#endif
+
+
 
 int Metadata::addUInt8(uint32_t tag, int count, const uint8_t *data)
 {

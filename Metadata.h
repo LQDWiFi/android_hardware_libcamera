@@ -27,8 +27,9 @@ class Metadata {
     public:
         Metadata();
         ~Metadata();
+
         // Initialize with framework metadata
-        int init(const camera_metadata_t *metadata);
+        //int init(const camera_metadata_t *metadata);
 
         // Parse and add an entry. Allocates and copies new storage for *data.
         int addUInt8(uint32_t tag, int count, const uint8_t *data);

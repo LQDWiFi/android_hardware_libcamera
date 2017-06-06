@@ -98,7 +98,6 @@ private:
     void newCameraConfig(int facing, const char* location, int orientation);
 
 private:
-
     /* Camera hardware */
     CameraHardware**    mCamera;
     char**              mCameraDevices;
