@@ -22,6 +22,7 @@
 #include <fcntl.h>
 #include <sys/mman.h>
 #include <sys/stat.h> /* for mode definitions */
+#include <unistd.h> /* for sleep */
 
 #include <ui/Rect.h>
 #include <ui/GraphicBufferMapper.h>
@@ -838,10 +839,27 @@ void CameraHardware::initDefaultParameters()
     SortedVector<SurfaceSize> avSizes;
     SortedVector<int> avFps;
 
-    if (camera.Open(mVideoDevice) != NO_ERROR) {
-        ALOGE("cannot open device.");
-    } else {
+    /*  Ugly hack: Loop for some time while waiting for the camera to be
+        enumerated.  If we can't get the available sizes then things fail
+        later in the camera service.
+    */
+    size_t CAMERA_WAIT = 15;
+    bool   opened = false;
 
+    for (auto i = 0; i < CAMERA_WAIT; ++i)
+    {
+        if (camera.Open(mVideoDevice) == NO_ERROR) {
+            opened = true;
+            break;
+        }
+
+        if (i < CAMERA_WAIT - 1) {
+            ALOGI("CameraHardware: sleeping for %s", mVideoDevice);
+            ::usleep(1000 * 1000);
+        }
+    }
+
+    if (opened) {
         // Get the default preview format
         pw = camera.getBestPreviewFmt().getWidth();
         ph = camera.getBestPreviewFmt().getHeight();
@@ -854,25 +872,27 @@ void CameraHardware::initDefaultParameters()
         // Get all the available sizes
         avSizes = camera.getAvailableSizes();
 
-        // Add some sizes that some specific apps expect to find:
-        //  GTalk expects 320x200
-        //  Fring expects 240x160
-        // And also add standard resolutions found in low end cameras, as
-        //  android apps could be expecting to find them
-        // The V4LCamera handles those resolutions by choosing the next
-        //  larger one and cropping the captured frames to the requested size
-
-        avSizes.add(SurfaceSize(480,320)); // HVGA
-        avSizes.add(SurfaceSize(432,320)); // 1.35-to-1, for photos. (Rounded up from 1.3333 to 1)
-        avSizes.add(SurfaceSize(352,288)); // CIF
-        avSizes.add(SurfaceSize(320,240)); // QVGA
-        avSizes.add(SurfaceSize(320,200));
-        avSizes.add(SurfaceSize(240,160)); // SQVGA
-        avSizes.add(SurfaceSize(176,144)); // QCIF
-
         // Get all the available Fps
         avFps = camera.getAvailableFps();
+    } else {
+        ALOGE("cannot open device.");
     }
+
+    // Add some sizes that some specific apps expect to find:
+    //  GTalk expects 320x200
+    //  Fring expects 240x160
+    // And also add standard resolutions found in low end cameras, as
+    //  android apps could be expecting to find them
+    // The V4LCamera handles those resolutions by choosing the next
+    //  larger one and cropping the captured frames to the requested size
+
+    avSizes.add(SurfaceSize(480,320)); // HVGA
+    avSizes.add(SurfaceSize(432,320)); // 1.35-to-1, for photos. (Rounded up from 1.3333 to 1)
+    avSizes.add(SurfaceSize(352,288)); // CIF
+    avSizes.add(SurfaceSize(320,240)); // QVGA
+    avSizes.add(SurfaceSize(320,200));
+    avSizes.add(SurfaceSize(240,160)); // SQVGA
+    avSizes.add(SurfaceSize(176,144)); // QCIF
 
 
     // Convert the sizes to text
