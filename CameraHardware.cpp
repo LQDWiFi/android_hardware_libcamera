@@ -31,6 +31,7 @@
 #include "Metadata.h"
 
 #define ARRAY_SIZE(a) (sizeof(a) / sizeof(a[0]))
+#define UNUSED(x) ((void)(x))
 
 #define MIN_WIDTH       320
 #define MIN_HEIGHT      240
@@ -707,6 +708,7 @@ int CameraHardware::isRecordingEnabled()
 
 void CameraHardware::releaseRecordingFrame(const void* mem)
 {
+    UNUSED(mem);
     ALOGD("CameraHardware::releaseRecordingFrame");
 }
 
@@ -857,6 +859,9 @@ void CameraHardware::putParameters(char* params)
 
 status_t CameraHardware::sendCommand(int32_t command, int32_t arg1, int32_t arg2)
 {
+    UNUSED(command);
+    UNUSED(arg1);
+    UNUSED(arg2);
     ALOGD("CameraHardware::sendCommand");
     return 0;
 }
@@ -875,6 +880,7 @@ void CameraHardware::releaseCamera()
 
 status_t CameraHardware::dumpCamera(int fd)
 {
+    UNUSED(fd);
     ALOGD("dump");
     return -EINVAL;
 }
@@ -900,10 +906,10 @@ void CameraHardware::initDefaultParameters()
         enumerated.  If we can't get the available sizes then things fail
         later in the camera service.
     */
-    size_t CAMERA_WAIT = 15;
-    bool   opened = false;
+    int     CAMERA_WAIT = 15;
+    bool    opened = false;
 
-    for (auto i = 0; i < CAMERA_WAIT; ++i)
+    for (int i = 0; i < CAMERA_WAIT; ++i)
     {
         if (camera.Open(mVideoDevice) == NO_ERROR) {
             opened = true;
