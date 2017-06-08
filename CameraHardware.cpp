@@ -109,69 +109,6 @@
 
 namespace android {
 
-bool CameraHardware::PowerOn()
-{
-    ALOGD("CameraHardware::PowerOn: Power ON camera.");
-
-    mCameraPowerFile = new char[PROPERTY_VALUE_MAX];
-    if (!property_get(CAMERA_POWER_FILE, mCameraPowerFile, "")) {
-        ALOGD("CameraHardware::PowerOn: no power_file set");
-        delete [] mCameraPowerFile;
-        mCameraPowerFile = 0;
-        return true;
-    }
-
-    // power on camera
-    int handle = ::open(mCameraPowerFile,O_RDWR);
-    if (handle >= 0) {
-        ::write(handle,"1\n",2);
-        ::close(handle);
-    } else {
-        ALOGE("Could not open %s for writing.", mCameraPowerFile);
-        return false;
-    }
-
-    // Wait until the camera is recognized or timed out
-    int timeOut = 500;
-    do {
-        // Try to open the video capture device
-        handle = ::open(mVideoDevice,O_RDWR);
-        if (handle >= 0)
-            break;
-        // Wait a bit
-        ::usleep(10000);
-    } while (--timeOut > 0);
-
-    if (handle >= 0) {
-        ALOGD("Camera powered on");
-        ::close(handle);
-        return true;
-    } else {
-        ALOGE("Unable to power camera");
-    }
-
-    return false;
-}
-
-bool CameraHardware::PowerOff()
-{
-    ALOGD("CameraHardware::PowerOff: Power OFF camera.");
-
-    if (!mCameraPowerFile)
-        return true;
-    // power on camera
-    int handle = ::open(mCameraPowerFile,O_RDWR);
-    if (handle >= 0) {
-        ::write(handle,"0\n",2);
-        ::close(handle);
-    } else {
-        ALOGE("Could not open %s for writing.", mCameraPowerFile);
-        return false;
-    }
-    delete [] mCameraPowerFile;
-    mCameraPowerFile = 0;
-    return true;
-}
 
 CameraHardware::CameraHardware(char* devLocation) :
         mWin(0),
@@ -218,9 +155,7 @@ CameraHardware::CameraHardware(char* devLocation) :
     //Store the video device location
     mVideoDevice = devLocation;
 
-    /*
-     * Initialize camera_device descriptor for this object.
-     */
+    // Initialize camera_device descriptor for this object.
 
     /* Common header */
     common.tag = HARDWARE_DEVICE_TAG;
@@ -239,6 +174,8 @@ CameraHardware::CameraHardware(char* devLocation) :
     initDefaultParameters();
     initStaticCameraMetadata();
 }
+
+
 
 CameraHardware::~CameraHardware()
 {
@@ -282,6 +219,77 @@ CameraHardware::~CameraHardware()
     PowerOff();
 }
 
+
+
+bool CameraHardware::PowerOn()
+{
+    ALOGD("CameraHardware::PowerOn: Power ON camera.");
+
+    mCameraPowerFile = new char[PROPERTY_VALUE_MAX];
+
+    if (!property_get(CAMERA_POWER_FILE, mCameraPowerFile, "")) {
+        ALOGD("CameraHardware::PowerOn: no power_file set");
+        delete [] mCameraPowerFile;
+        mCameraPowerFile = 0;
+        return true;
+    }
+
+    // power on camera
+    int handle = ::open(mCameraPowerFile,O_RDWR);
+    if (handle >= 0) {
+        ::write(handle,"1\n",2);
+        ::close(handle);
+    } else {
+        ALOGE("Could not open %s for writing.", mCameraPowerFile);
+        return false;
+    }
+
+    // Wait until the camera is recognized or timed out
+    int timeOut = 500;
+    do {
+        // Try to open the video capture device
+        handle = ::open(mVideoDevice,O_RDWR);
+        if (handle >= 0)
+            break;
+        // Wait a bit
+        ::usleep(10000);
+    } while (--timeOut > 0);
+
+    if (handle >= 0) {
+        ALOGD("Camera powered on");
+        ::close(handle);
+        return true;
+    } else {
+        ALOGE("Unable to power camera");
+    }
+
+    return false;
+}
+
+
+
+bool CameraHardware::PowerOff()
+{
+    ALOGD("CameraHardware::PowerOff: Power OFF camera.");
+
+    if (!mCameraPowerFile)
+        return true;
+    // power on camera
+    int handle = ::open(mCameraPowerFile,O_RDWR);
+    if (handle >= 0) {
+        ::write(handle,"0\n",2);
+        ::close(handle);
+    } else {
+        ALOGE("Could not open %s for writing.", mCameraPowerFile);
+        return false;
+    }
+    delete [] mCameraPowerFile;
+    mCameraPowerFile = 0;
+    return true;
+}
+
+
+
 bool CameraHardware::NegotiatePreviewFormat(struct preview_stream_ops* win)
 {
     ALOGD("CameraHardware::NegotiatePreviewFormat");
@@ -313,6 +321,8 @@ bool CameraHardware::NegotiatePreviewFormat(struct preview_stream_ops* win)
     return true;
 }
 
+
+
 /****************************************************************************
  * Camera API implementation.
  ***************************************************************************/
@@ -326,6 +336,8 @@ status_t CameraHardware::connectCamera(const hw_module_t* module, hw_device_t** 
     return NO_ERROR;
 }
 
+
+
 status_t CameraHardware::closeCamera()
 {
     ALOGD("CameraHardware::closeCamera");
@@ -333,26 +345,21 @@ status_t CameraHardware::closeCamera()
     return NO_ERROR;
 }
 
+
+
 status_t CameraHardware::getCameraInfo(struct camera_info* info, int facing,
                                        int orientation)
 {
     ALOGD("CameraHardware::getCameraInfo");
-    ALOGD("CameraHardware::getCameraInfo 1 info=%p", info);
-    ALOGD("CameraHardware::getCameraInfo 1 info->static_camera_characteristics=%p", info->static_camera_characteristics);
-    ALOGD("CameraHardware::getCameraInfo 1 this=%p", this);
-    ALOGD("CameraHardware::getCameraInfo 1 mCameraMetadata=%p", mCameraMetadata);
-
     info->facing = facing;
-    ALOGD("CameraHardware::getCameraInfo 2");
     info->orientation = orientation;
-    ALOGD("CameraHardware::getCameraInfo 3");
     info->device_version = CAMERA_DEVICE_API_VERSION_1_0;
-    ALOGD("CameraHardware::getCameraInfo 4");
     info->static_camera_characteristics = mCameraMetadata;
-    ALOGD("CameraHardware::getCameraInfo 5");
 
     return NO_ERROR;
 }
+
+
 
 status_t CameraHardware::setPreviewWindow(struct preview_stream_ops* window)
 {
@@ -385,6 +392,8 @@ status_t CameraHardware::setPreviewWindow(struct preview_stream_ops* window)
     return NO_ERROR;
 }
 
+
+
 void CameraHardware::setCallbacks(camera_notify_callback notify_cb,
                                   camera_data_callback data_cb,
                                   camera_data_timestamp_callback data_cb_timestamp,
@@ -401,6 +410,7 @@ void CameraHardware::setCallbacks(camera_notify_callback notify_cb,
         mCallbackCookie = user;
     }
 }
+
 
 
 void CameraHardware::enableMsgType(int32_t msgType)
@@ -424,6 +434,7 @@ void CameraHardware::enableMsgType(int32_t msgType)
 }
 
 
+
 void CameraHardware::disableMsgType(int32_t msgType)
 {
     ALOGD("CameraHardware::disableMsgType: %d", msgType);
@@ -444,6 +455,8 @@ void CameraHardware::disableMsgType(int32_t msgType)
     }
 }
 
+
+
 /**
  * Query whether a message, or a set of messages, is enabled.
  * Note that this is operates as an AND, if any of the messages
@@ -460,6 +473,8 @@ int CameraHardware::isMsgTypeEnabled(int32_t msgType)
     return enabled;
 }
 
+
+
 CameraHardware::PreviewThread::PreviewThread(CameraHardware* hw) :
         Thread(false),
         mHardware(hw)
@@ -467,10 +482,13 @@ CameraHardware::PreviewThread::PreviewThread(CameraHardware* hw) :
 }
 
 
+
 void CameraHardware::PreviewThread::onFirstRef()
 {
     run("CameraPreviewThread", PRIORITY_URGENT_DISPLAY);
 }
+
+
 
 bool CameraHardware::PreviewThread::threadLoop()
 {
@@ -478,6 +496,8 @@ bool CameraHardware::PreviewThread::threadLoop()
     // loop until we need to quit
     return true;
 }
+
+
 
 status_t CameraHardware::startPreviewLocked()
 {
@@ -555,6 +575,8 @@ status_t CameraHardware::startPreviewLocked()
     return NO_ERROR;
 }
 
+
+
 status_t CameraHardware::startPreview()
 {
     ALOGD("CameraHardware::startPreview");
@@ -562,6 +584,7 @@ status_t CameraHardware::startPreview()
     Mutex::Autolock lock(mLock);
     return startPreviewLocked();
 }
+
 
 
 void CameraHardware::stopPreviewLocked()
@@ -585,6 +608,8 @@ void CameraHardware::stopPreviewLocked()
     ALOGD("CameraHardware::stopPreviewLocked: OK");
 }
 
+
+
 void CameraHardware::stopPreview()
 {
     ALOGD("CameraHardware::stopPreview");
@@ -592,6 +617,8 @@ void CameraHardware::stopPreview()
     Mutex::Autolock lock(mLock);
     stopPreviewLocked();
 }
+
+
 
 int CameraHardware::isPreviewEnabled()
 {
@@ -605,6 +632,8 @@ int CameraHardware::isPreviewEnabled()
     return enabled;
 }
 
+
+
 status_t CameraHardware::storeMetaDataInBuffers(int value)
 {
     ALOGD("CameraHardware::storeMetaDataInBuffers: %d", value);
@@ -615,6 +644,8 @@ status_t CameraHardware::storeMetaDataInBuffers(int value)
     //  data.
     return (value) ? INVALID_OPERATION : NO_ERROR;
 }
+
+
 
 status_t CameraHardware::startRecording()
 {
@@ -637,6 +668,8 @@ status_t CameraHardware::startRecording()
     return NO_ERROR;
 }
 
+
+
 void CameraHardware::stopRecording()
 {
     ALOGD("CameraHardware::stopRecording");
@@ -657,6 +690,8 @@ void CameraHardware::stopRecording()
     }
 }
 
+
+
 int CameraHardware::isRecordingEnabled()
 {
     int enabled;
@@ -668,10 +703,13 @@ int CameraHardware::isRecordingEnabled()
     return enabled;
 }
 
+
+
 void CameraHardware::releaseRecordingFrame(const void* mem)
 {
     ALOGD("CameraHardware::releaseRecordingFrame");
 }
+
 
 
 status_t CameraHardware::setAutoFocus()
@@ -683,11 +721,15 @@ status_t CameraHardware::setAutoFocus()
     return NO_ERROR;
 }
 
+
+
 status_t CameraHardware::cancelAutoFocus()
 {
     ALOGD("CameraHardware::cancelAutoFocus");
     return NO_ERROR;
 }
+
+
 
 status_t CameraHardware::takePicture()
 {
@@ -698,11 +740,15 @@ status_t CameraHardware::takePicture()
     return NO_ERROR;
 }
 
+
+
 status_t CameraHardware::cancelPicture()
 {
     ALOGD("CameraHardware::cancelPicture");
     return NO_ERROR;
 }
+
+
 
 status_t CameraHardware::setParameters(const char* parms)
 {
@@ -768,9 +814,12 @@ status_t CameraHardware::setParameters(const char* parms)
     return NO_ERROR;
 }
 
+
+
 /* A dumb variable indicating "no params" / error on the exit from
  * EmulatedCamera::getParameters(). */
 static char lNoParam = '\0';
+
 char* CameraHardware::getParameters()
 {
     ALOGD("CameraHardware::getParameters");
@@ -793,6 +842,8 @@ char* CameraHardware::getParameters()
     return &lNoParam;
 }
 
+
+
 void CameraHardware::putParameters(char* params)
 {
     ALOGD("CameraHardware::putParameters");
@@ -802,11 +853,15 @@ void CameraHardware::putParameters(char* params)
     }
 }
 
+
+
 status_t CameraHardware::sendCommand(int32_t command, int32_t arg1, int32_t arg2)
 {
     ALOGD("CameraHardware::sendCommand");
     return 0;
 }
+
+
 
 void CameraHardware::releaseCamera()
 {
@@ -815,6 +870,8 @@ void CameraHardware::releaseCamera()
         stopPreview();
     }
 }
+
+
 
 status_t CameraHardware::dumpCamera(int fd)
 {
@@ -1155,6 +1212,7 @@ void CameraHardware::initStaticCameraMetadata()
 
     mCameraMetadata = clone_camera_metadata(m.get());
 }
+
 
 
 void CameraHardware::initHeapLocked()
@@ -1791,12 +1849,16 @@ void CameraHardware::fillPreviewWindow(uint8_t* yuyv, int srcWidth, int srcHeigh
     grbuffer_mapper.unlock(*buf);
 }
 
+
+
 int CameraHardware::beginAutoFocusThread(void *cookie)
 {
     ALOGD("CameraHardware::beginAutoFocusThread");
     CameraHardware *c = (CameraHardware *)cookie;
     return c->autoFocusThread();
 }
+
+
 
 int CameraHardware::autoFocusThread()
 {
@@ -1807,12 +1869,15 @@ int CameraHardware::autoFocusThread()
 }
 
 
+
 int CameraHardware::beginPictureThread(void *cookie)
 {
     ALOGD("CameraHardware::beginPictureThread");
     CameraHardware *c = (CameraHardware *)cookie;
     return c->pictureThread();
 }
+
+
 
 int CameraHardware::pictureThread()
 {
@@ -1968,6 +2033,8 @@ int CameraHardware::pictureThread()
     return NO_ERROR;
 }
 
+
+
 /****************************************************************************
  * Camera API callbacks as defined by camera_device_ops structure.
  *
@@ -1986,6 +2053,8 @@ int CameraHardware::set_preview_window(struct camera_device* dev,
     return ec->setPreviewWindow(window);
 }
 
+
+
 void CameraHardware::set_callbacks(
         struct camera_device* dev,
         camera_notify_callback notify_cb,
@@ -2002,6 +2071,8 @@ void CameraHardware::set_callbacks(
     ec->setCallbacks(notify_cb, data_cb, data_cb_timestamp, get_memory, user);
 }
 
+
+
 void CameraHardware::enable_msg_type(struct camera_device* dev, int32_t msg_type)
 {
     CameraHardware* ec = reinterpret_cast<CameraHardware*>(dev->priv);
@@ -2011,6 +2082,8 @@ void CameraHardware::enable_msg_type(struct camera_device* dev, int32_t msg_type
     }
     ec->enableMsgType(msg_type);
 }
+
+
 
 void CameraHardware::disable_msg_type(struct camera_device* dev, int32_t msg_type)
 {
@@ -2022,6 +2095,8 @@ void CameraHardware::disable_msg_type(struct camera_device* dev, int32_t msg_typ
     ec->disableMsgType(msg_type);
 }
 
+
+
 int CameraHardware::msg_type_enabled(struct camera_device* dev, int32_t msg_type)
 {
     CameraHardware* ec = reinterpret_cast<CameraHardware*>(dev->priv);
@@ -2031,6 +2106,8 @@ int CameraHardware::msg_type_enabled(struct camera_device* dev, int32_t msg_type
     }
     return ec->isMsgTypeEnabled(msg_type);
 }
+
+
 
 int CameraHardware::start_preview(struct camera_device* dev)
 {
@@ -2042,6 +2119,8 @@ int CameraHardware::start_preview(struct camera_device* dev)
     return ec->startPreview();
 }
 
+
+
 void CameraHardware::stop_preview(struct camera_device* dev)
 {
     CameraHardware* ec = reinterpret_cast<CameraHardware*>(dev->priv);
@@ -2052,6 +2131,8 @@ void CameraHardware::stop_preview(struct camera_device* dev)
     ec->stopPreview();
 }
 
+
+
 int CameraHardware::preview_enabled(struct camera_device* dev)
 {
     CameraHardware* ec = reinterpret_cast<CameraHardware*>(dev->priv);
@@ -2061,6 +2142,8 @@ int CameraHardware::preview_enabled(struct camera_device* dev)
     }
     return ec->isPreviewEnabled();
 }
+
+
 
 int CameraHardware::store_meta_data_in_buffers(struct camera_device* dev,
                                                int enable)
@@ -2073,6 +2156,8 @@ int CameraHardware::store_meta_data_in_buffers(struct camera_device* dev,
     return ec->storeMetaDataInBuffers(enable);
 }
 
+
+
 int CameraHardware::start_recording(struct camera_device* dev)
 {
     CameraHardware* ec = reinterpret_cast<CameraHardware*>(dev->priv);
@@ -2082,6 +2167,8 @@ int CameraHardware::start_recording(struct camera_device* dev)
     }
     return ec->startRecording();
 }
+
+
 
 void CameraHardware::stop_recording(struct camera_device* dev)
 {
@@ -2093,6 +2180,8 @@ void CameraHardware::stop_recording(struct camera_device* dev)
     ec->stopRecording();
 }
 
+
+
 int CameraHardware::recording_enabled(struct camera_device* dev)
 {
     CameraHardware* ec = reinterpret_cast<CameraHardware*>(dev->priv);
@@ -2102,6 +2191,8 @@ int CameraHardware::recording_enabled(struct camera_device* dev)
     }
     return ec->isRecordingEnabled();
 }
+
+
 
 void CameraHardware::release_recording_frame(struct camera_device* dev,
                                              const void* opaque)
@@ -2114,6 +2205,8 @@ void CameraHardware::release_recording_frame(struct camera_device* dev,
     ec->releaseRecordingFrame(opaque);
 }
 
+
+
 int CameraHardware::auto_focus(struct camera_device* dev)
 {
     CameraHardware* ec = reinterpret_cast<CameraHardware*>(dev->priv);
@@ -2123,6 +2216,8 @@ int CameraHardware::auto_focus(struct camera_device* dev)
     }
     return ec->setAutoFocus();
 }
+
+
 
 int CameraHardware::cancel_auto_focus(struct camera_device* dev)
 {
@@ -2134,6 +2229,8 @@ int CameraHardware::cancel_auto_focus(struct camera_device* dev)
     return ec->cancelAutoFocus();
 }
 
+
+
 int CameraHardware::take_picture(struct camera_device* dev)
 {
     CameraHardware* ec = reinterpret_cast<CameraHardware*>(dev->priv);
@@ -2143,6 +2240,8 @@ int CameraHardware::take_picture(struct camera_device* dev)
     }
     return ec->takePicture();
 }
+
+
 
 int CameraHardware::cancel_picture(struct camera_device* dev)
 {
@@ -2154,6 +2253,8 @@ int CameraHardware::cancel_picture(struct camera_device* dev)
     return ec->cancelPicture();
 }
 
+
+
 int CameraHardware::set_parameters(struct camera_device* dev, const char* parms)
 {
     CameraHardware* ec = reinterpret_cast<CameraHardware*>(dev->priv);
@@ -2163,6 +2264,8 @@ int CameraHardware::set_parameters(struct camera_device* dev, const char* parms)
     }
     return ec->setParameters(parms);
 }
+
+
 
 char* CameraHardware::get_parameters(struct camera_device* dev)
 {
@@ -2174,6 +2277,8 @@ char* CameraHardware::get_parameters(struct camera_device* dev)
     return ec->getParameters();
 }
 
+
+
 void CameraHardware::put_parameters(struct camera_device* dev, char* params)
 {
     CameraHardware* ec = reinterpret_cast<CameraHardware*>(dev->priv);
@@ -2183,6 +2288,8 @@ void CameraHardware::put_parameters(struct camera_device* dev, char* params)
     }
     ec->putParameters(params);
 }
+
+
 
 int CameraHardware::send_command(struct camera_device* dev,
                                  int32_t cmd,
@@ -2197,6 +2304,8 @@ int CameraHardware::send_command(struct camera_device* dev,
     return ec->sendCommand(cmd, arg1, arg2);
 }
 
+
+
 void CameraHardware::release(struct camera_device* dev)
 {
     CameraHardware* ec = reinterpret_cast<CameraHardware*>(dev->priv);
@@ -2207,6 +2316,8 @@ void CameraHardware::release(struct camera_device* dev)
     ec->releaseCamera();
 }
 
+
+
 int CameraHardware::dump(struct camera_device* dev, int fd)
 {
     CameraHardware* ec = reinterpret_cast<CameraHardware*>(dev->priv);
@@ -2216,6 +2327,8 @@ int CameraHardware::dump(struct camera_device* dev, int fd)
     }
     return ec->dumpCamera(fd);
 }
+
+
 
 int CameraHardware::close(struct hw_device_t* device)
 {
