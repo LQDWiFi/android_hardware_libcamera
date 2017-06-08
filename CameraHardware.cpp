@@ -405,7 +405,7 @@ void CameraHardware::setCallbacks(camera_notify_callback notify_cb,
 
 void CameraHardware::enableMsgType(int32_t msgType)
 {
-    ALOGD("CameraHardware::enableMsgType: %d", msgType);
+    ALOGD("CameraHardware::enableMsgType: 0x%x", msgType);
     {
         Mutex::Autolock lock(mLock);
         int32_t old = mMsgEnabled;
