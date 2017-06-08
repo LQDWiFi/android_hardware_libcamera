@@ -906,7 +906,7 @@ void CameraHardware::initDefaultParameters()
         enumerated.  If we can't get the available sizes then things fail
         later in the camera service.
     */
-    int     CAMERA_WAIT = 15;
+    int     CAMERA_WAIT = 30;   // seconds
     bool    opened = false;
 
     for (int i = 0; i < CAMERA_WAIT; ++i)
@@ -923,6 +923,8 @@ void CameraHardware::initDefaultParameters()
     }
 
     if (opened) {
+        ALOGI("CameraHardware: opened %s", mVideoDevice);
+
         // Get the default preview format
         pw = camera.getBestPreviewFmt().getWidth();
         ph = camera.getBestPreviewFmt().getHeight();
@@ -939,8 +941,13 @@ void CameraHardware::initDefaultParameters()
         avFps = camera.getAvailableFps();
     } else {
         ALOGE("cannot open device.");
+
+        // We need something
+        avSizes.add(SurfaceSize(640,480)); // VGA
+        avFps.add(30);
     }
 
+#if 0
     // Add some sizes that some specific apps expect to find:
     //  GTalk expects 320x200
     //  Fring expects 240x160
@@ -956,7 +963,7 @@ void CameraHardware::initDefaultParameters()
     avSizes.add(SurfaceSize(320,200));
     avSizes.add(SurfaceSize(240,160)); // SQVGA
     avSizes.add(SurfaceSize(176,144)); // QCIF
-
+#endif
 
     // Convert the sizes to text
     String8 szs("");
@@ -1066,7 +1073,7 @@ void CameraHardware::initDefaultParameters()
     p.set(CameraParameters::KEY_EXPOSURE_COMPENSATION, "6");
     p.set(CameraParameters::KEY_EXPOSURE_COMPENSATION_STEP, "1.5");
 
-    p.set(CameraParameters::KEY_SUPPORTED_JPEG_THUMBNAIL_SIZES, "640x480,0x0");
+    p.set(CameraParameters::KEY_SUPPORTED_JPEG_THUMBNAIL_SIZES, "640x480");
     p.set(CameraParameters::KEY_JPEG_THUMBNAIL_HEIGHT,640);
     p.set(CameraParameters::KEY_JPEG_THUMBNAIL_QUALITY,75);
     p.set(CameraParameters::KEY_JPEG_THUMBNAIL_WIDTH,480);
