@@ -36,6 +36,9 @@
 #define MIN_WIDTH       320
 #define MIN_HEIGHT      240
 
+// in seconds
+#define CAMERA_WAIT     60
+
 #ifndef PIXEL_FORMAT_RGB_888
 #define PIXEL_FORMAT_RGB_888 3 /* */
 #endif
@@ -892,8 +895,7 @@ void CameraHardware::initDefaultParameters()
         enumerated.  If we can't get the available sizes then things fail
         later in the camera service.
     */
-    int     CAMERA_WAIT = 30;   // seconds
-    bool    opened = false;
+    bool opened = false;
 
     for (int i = 0; i < CAMERA_WAIT; ++i)
     {

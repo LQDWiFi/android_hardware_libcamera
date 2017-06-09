@@ -31,29 +31,21 @@
 
 extern camera_module_t HAL_MODULE_INFO_SYM;
 
-static android::CameraFactory*  gCameraFactory;
 
 namespace android {
 
-
-static android::CameraFactory& instance()
-{
-    // REVISIT threading?
-    if (!gCameraFactory) {
-        gCameraFactory = new CameraFactory();
-    }
-
-    return *gCameraFactory;
-}
+ANDROID_SINGLETON_STATIC_INSTANCE(CameraFactory);
 
 
 CameraFactory::CameraFactory()
+  : Singleton<CameraFactory>(),
+    mCamera             (0),
+    mCameraDevices      (0),
+    mCameraFacing       (0),
+    mCameraOrientation  (0),
+    mCameraNum          (0)
 {
     ALOGD("CameraFactory");
-    mCamera = NULL;
-    mCameraDevices = NULL;
-    mCameraFacing = NULL;
-    mCameraOrientation = NULL;
 
     /*  The camera service will be calling getCameraInfo early, even before the
         camera device is opened.  We must have the CameraHardware objects in place.
@@ -219,7 +211,7 @@ int CameraFactory::device_open(
     }
 
     int camera_id = atoi(name);
-    return instance().cameraDeviceOpen(module, camera_id, device);
+    return getInstance().cameraDeviceOpen(module, camera_id, device);
 }
 
 
@@ -227,7 +219,7 @@ int CameraFactory::device_open(
 int CameraFactory::get_number_of_cameras(void)
 {
     ALOGD("get_number_of_cameras");
-    return instance().getCameraNum();
+    return getInstance().getCameraNum();
 }
 
 
@@ -236,7 +228,7 @@ int CameraFactory::get_camera_info(int camera_id,
                                            struct camera_info* info)
 {
     ALOGD("get_camera_info");
-    return instance().getCameraInfo(camera_id, info);
+    return getInstance().getCameraInfo(camera_id, info);
 }
 
 /********************************************************************************

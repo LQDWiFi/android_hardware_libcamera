@@ -20,6 +20,7 @@
 #include <string.h>
 #include <hardware/hardware.h>
 #include <hardware/camera.h>
+#include <utils/Singleton.h>
 #include "CameraHardware.h"
 
 namespace android {
@@ -47,7 +48,7 @@ namespace android {
  *  - camera_module_t::get_camera_info entry point
  *
  */
-class CameraFactory {
+class CameraFactory: public Singleton<CameraFactory> {
 public:
     /* Constructs CameraFactory instance.
      * In this constructor the factory will create and initialize a list of
@@ -89,6 +90,8 @@ public:
     static int get_camera_info(int camera_id, struct camera_info *info);
 
 private:
+    friend class Singleton<CameraFactory>;
+
     /* hw_module_methods_t::open callback entry point. */
     static int device_open(const hw_module_t* module,
                            const char* name,
