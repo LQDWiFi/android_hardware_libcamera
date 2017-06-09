@@ -112,7 +112,4 @@ public:
 
 }; /* namespace android */
 
-/* References the global CameraFactory instance. */
-extern android::CameraFactory   gCameraFactory;
-
 #endif  /* HW_EMULATOR_CAMERA_EMULATED_CAMERA_FACTORY_H */

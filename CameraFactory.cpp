@@ -23,7 +23,7 @@
 #define DEFAULT_DEVICE_FRONT "/dev/video1"
 #define DEFAULT_DEVICE_BACK  "/dev/video0"
 #define CONFIG_FILE "/etc/camera.cfg"
-#define LOG_TAG "Camera_Factory"
+#define LOG_TAG "CameraFactory"
 
 #include <cutils/log.h>
 #include <cutils/properties.h>
@@ -31,16 +31,25 @@
 
 extern camera_module_t HAL_MODULE_INFO_SYM;
 
-/* A global instance of CameraFactory is statically instantiated and
- * initialized when camera HAL is loaded.
- */
-android::CameraFactory  gCameraFactory;
+static android::CameraFactory*  gCameraFactory;
 
 namespace android {
 
+
+static android::CameraFactory& instance()
+{
+    // REVISIT threading?
+    if (!gCameraFactory) {
+        gCameraFactory = new CameraFactory();
+    }
+
+    return *gCameraFactory;
+}
+
+
 CameraFactory::CameraFactory()
 {
-    ALOGD("CameraFactory::CameraFactory");
+    ALOGD("CameraFactory");
     mCamera = NULL;
     mCameraDevices = NULL;
     mCameraFacing = NULL;
@@ -56,7 +65,7 @@ CameraFactory::CameraFactory()
 
 CameraFactory::~CameraFactory()
 {
-    ALOGD("CameraFactory::~CameraFactory");
+    ALOGD("~CameraFactory");
     for (int i=0; i < getCameraNum(); i++) {
         delete mCamera[i];
     }
@@ -73,7 +82,7 @@ CameraFactory::~CameraFactory()
 
 int CameraFactory::cameraDeviceOpen(const hw_module_t* module,int camera_id, hw_device_t** device)
 {
-    ALOGD("CameraFactory::cameraDeviceOpen: id = %d", camera_id);
+    ALOGD("cameraDeviceOpen: id = %d", camera_id);
 
     *device = NULL;
 
@@ -89,7 +98,7 @@ int CameraFactory::cameraDeviceOpen(const hw_module_t* module,int camera_id, hw_
 /* Returns the number of available cameras */
 int CameraFactory::getCameraNum()
 {
-    ALOGD("CameraFactory::getCameraNum: %d", mCameraNum);
+    ALOGD("getCameraNum: %d", mCameraNum);
     return mCameraNum;
 }
 
@@ -100,7 +109,7 @@ int CameraFactory::getCameraInfo(int camera_id, struct camera_info* info)
     /*  This will be called early by the camera service. The CameraHardware
         objects must already be created.
     */
-    ALOGD("CameraFactory::getCameraInfo: id = %d, info = %p", camera_id, info);
+    ALOGD("getCameraInfo: id = %d, info = %p", camera_id, info);
 
     if (camera_id < 0 || camera_id >= getCameraNum()) {
         ALOGE("%s: Camera id %d is out of bounds (%d)",
@@ -117,7 +126,7 @@ int CameraFactory::getCameraInfo(int camera_id, struct camera_info* info)
 // Parse a simple configuration file
 void CameraFactory::parseConfig(const char* configFile)
 {
-    ALOGD("CameraFactory::parseConfig: configFile = %s", configFile);
+    ALOGD("parseConfig: configFile = %s", configFile);
 
     FILE* config = fopen(configFile, "r");
     if (config != NULL) {
@@ -141,7 +150,7 @@ void CameraFactory::parseConfig(const char* configFile)
             } else if (strcmp(arg1, "back") == 0) {
                 newCameraConfig(CAMERA_FACING_BACK, arg2, arg3);
             } else {
-                ALOGD("CameraFactory::parseConfig: Unrecognized config line '%s'", line);
+                ALOGD("parseConfig: Unrecognized config line '%s'", line);
             }
         }
     } else {
@@ -156,7 +165,7 @@ void CameraFactory::parseConfig(const char* configFile)
         }
     }
 
-    ALOGD("CameraFactory::parseConfig: done");
+    ALOGD("parseConfig: done");
 }
 
 // Although realloc could be a costly operation, we only execute this function usually 2 times
@@ -177,7 +186,7 @@ void CameraFactory::newCameraConfig(int facing, const char* location, int orient
     mCamera[camera_id] = new CameraHardware(mCameraDevices[camera_id]);
     mCameraFacing[camera_id] = facing;
     mCameraOrientation[camera_id] = orientation;
-    ALOGD("CameraFactory::newCameraConfig: %d -> %s (%d)",
+    ALOGD("newCameraConfig: %d -> %s (%d)",
           mCameraFacing[camera_id], mCameraDevices[camera_id], mCameraOrientation[camera_id]);
 }
 
@@ -185,11 +194,13 @@ void CameraFactory::newCameraConfig(int facing, const char* location, int orient
  * Camera HAL API callbacks.
  ***************************************************************************/
 
-int CameraFactory::device_open(const hw_module_t* module,
-                                       const char* name,
-                                       hw_device_t** device)
+int CameraFactory::device_open(
+    const hw_module_t*  module,
+    const char*         name,
+    hw_device_t**       device
+    )
 {
-    ALOGD("CameraFactory::device_open: name = %s", name);
+    ALOGD("device_open: name = %s", name);
 
     /*
      * Simply verify the parameters, and dispatch the call inside the
@@ -201,26 +212,31 @@ int CameraFactory::device_open(const hw_module_t* module,
                 __FUNCTION__, module, &HAL_MODULE_INFO_SYM.common);
         return -EINVAL;
     }
+
     if (name == NULL) {
         ALOGE("%s: NULL name is not expected here", __FUNCTION__);
         return -EINVAL;
     }
 
     int camera_id = atoi(name);
-    return gCameraFactory.cameraDeviceOpen(module, camera_id, device);
+    return instance().cameraDeviceOpen(module, camera_id, device);
 }
+
+
 
 int CameraFactory::get_number_of_cameras(void)
 {
-    ALOGD("CameraFactory::get_number_of_cameras");
-    return gCameraFactory.getCameraNum();
+    ALOGD("get_number_of_cameras");
+    return instance().getCameraNum();
 }
+
+
 
 int CameraFactory::get_camera_info(int camera_id,
                                            struct camera_info* info)
 {
-    ALOGD("CameraFactory::get_camera_info");
-    return gCameraFactory.getCameraInfo(camera_id, info);
+    ALOGD("get_camera_info");
+    return instance().getCameraInfo(camera_id, info);
 }
 
 /********************************************************************************

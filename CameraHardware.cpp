@@ -224,12 +224,12 @@ CameraHardware::~CameraHardware()
 
 bool CameraHardware::PowerOn()
 {
-    ALOGD("CameraHardware::PowerOn: Power ON camera.");
+    ALOGD("PowerOn: Power ON camera.");
 
     mCameraPowerFile = new char[PROPERTY_VALUE_MAX];
 
     if (!property_get(CAMERA_POWER_FILE, mCameraPowerFile, "")) {
-        ALOGD("CameraHardware::PowerOn: no power_file set");
+        ALOGD("PowerOn: no power_file set");
         delete [] mCameraPowerFile;
         mCameraPowerFile = 0;
         return true;
@@ -293,7 +293,7 @@ bool CameraHardware::PowerOff()
 
 bool CameraHardware::NegotiatePreviewFormat(struct preview_stream_ops* win)
 {
-    ALOGD("CameraHardware::NegotiatePreviewFormat");
+    ALOGD("NegotiatePreviewFormat");
 
     // Get the preview size... If we are recording, use the recording video size instead of the preview size
     int pw, ph;
@@ -330,7 +330,7 @@ bool CameraHardware::NegotiatePreviewFormat(struct preview_stream_ops* win)
 
 status_t CameraHardware::connectCamera(const hw_module_t* module, hw_device_t** device)
 {
-    ALOGD("CameraHardware::connectCamera");
+    ALOGD("connectCamera");
 
     common.module = const_cast<hw_module_t*>(module);
     *device = &common;
@@ -341,7 +341,7 @@ status_t CameraHardware::connectCamera(const hw_module_t* module, hw_device_t** 
 
 status_t CameraHardware::closeCamera()
 {
-    ALOGD("CameraHardware::closeCamera");
+    ALOGD("closeCamera");
     releaseCamera();
     return NO_ERROR;
 }
@@ -351,7 +351,7 @@ status_t CameraHardware::closeCamera()
 status_t CameraHardware::getCameraInfo(struct camera_info* info, int facing,
                                        int orientation)
 {
-    ALOGD("CameraHardware::getCameraInfo");
+    ALOGD("getCameraInfo");
     info->facing = facing;
     info->orientation = orientation;
     info->device_version = CAMERA_DEVICE_API_VERSION_1_0;
@@ -364,7 +364,7 @@ status_t CameraHardware::getCameraInfo(struct camera_info* info, int facing,
 
 status_t CameraHardware::setPreviewWindow(struct preview_stream_ops* window)
 {
-    ALOGD("CameraHardware::setPreviewWindow: preview_stream_ops: %p", window);
+    ALOGD("setPreviewWindow: preview_stream_ops: %p", window);
     {
         Mutex::Autolock lock(mLock);
 
@@ -375,8 +375,7 @@ status_t CameraHardware::setPreviewWindow(struct preview_stream_ops* window)
             status_t res = window->set_usage(window, GRALLOC_USAGE_SW_WRITE_OFTEN);
             if (res != NO_ERROR) {
                 res = -res; // set_usage returns a negative errno.
-                ALOGE("%s: Error setting preview window usage %d -> %s",
-                        __FUNCTION__, res, strerror(res));
+                ALOGE("setPreviewWindow: Error setting preview window usage %d -> %s", res, strerror(res));
                 return res;
             }
         }
@@ -385,7 +384,7 @@ status_t CameraHardware::setPreviewWindow(struct preview_stream_ops* window)
 
         // setup the preview window geometry to be able to use the full preview window
         if (mPreviewThread != 0 && mWin != 0) {
-            ALOGD("CameraHardware::setPreviewWindow - Negotiating preview format");
+            ALOGD("setPreviewWindow - Negotiating preview format");
             NegotiatePreviewFormat(mWin);
         }
 
@@ -401,7 +400,7 @@ void CameraHardware::setCallbacks(camera_notify_callback notify_cb,
                                   camera_request_memory get_memory,
                                   void* user)
 {
-    ALOGD("CameraHardware::setCallbacks");
+    ALOGD("setCallbacks");
     {
         Mutex::Autolock lock(mLock);
         mNotifyCb = notify_cb;
@@ -416,7 +415,7 @@ void CameraHardware::setCallbacks(camera_notify_callback notify_cb,
 
 void CameraHardware::enableMsgType(int32_t msgType)
 {
-    ALOGD("CameraHardware::enableMsgType: 0x%x", msgType);
+    ALOGD("enableMsgType: 0x%x", msgType);
     {
         Mutex::Autolock lock(mLock);
         int32_t old = mMsgEnabled;
@@ -438,7 +437,7 @@ void CameraHardware::enableMsgType(int32_t msgType)
 
 void CameraHardware::disableMsgType(int32_t msgType)
 {
-    ALOGD("CameraHardware::disableMsgType: %d", msgType);
+    ALOGD("disableMsgType: %d", msgType);
     {
         Mutex::Autolock lock(mLock);
         int32_t old = mMsgEnabled;
@@ -470,7 +469,7 @@ int CameraHardware::isMsgTypeEnabled(int32_t msgType)
     // All messages queried must be enabled to return true
     int enabled = (mMsgEnabled & msgType) == msgType;
 
-    ALOGD("CameraHardware::isMsgTypeEnabled(%d): %d", msgType, enabled);
+    ALOGD("isMsgTypeEnabled(%d): %d", msgType, enabled);
     return enabled;
 }
 
@@ -502,10 +501,10 @@ bool CameraHardware::PreviewThread::threadLoop()
 
 status_t CameraHardware::startPreviewLocked()
 {
-    ALOGD("CameraHardware::startPreviewLocked");
+    ALOGD("startPreviewLocked");
 
     if (mPreviewThread != 0) {
-        ALOGD("CameraHardware::startPreviewLocked: preview already running");
+        ALOGD("startPreviewLocked: preview already running");
         return NO_ERROR;
     }
 
@@ -520,26 +519,22 @@ status_t CameraHardware::startPreviewLocked()
 
     int fps = mParameters.getPreviewFrameRate();
 
-    ALOGD("CameraHardware::startPreviewLocked: Open, %dx%d", width, height);
-
     status_t ret = camera.Open(mVideoDevice);
     if (ret != NO_ERROR) {
-        ALOGE("Failed to initialize Camera");
+        ALOGE("startPreviewLocked: Failed to initialize Camera");
         return ret;
     }
 
-    ALOGD("CameraHardware::startPreviewLocked: Init");
-
     ret = camera.Init(width, height, fps);
     if (ret != NO_ERROR) {
-        ALOGE("Failed to setup streaming");
+        ALOGE("startPreviewLocked: Failed to setup streaming");
         return ret;
     }
 
     /* Retrieve the real size being used */
     camera.getSize(width, height);
 
-    ALOGD("CameraHardware::startPreviewLocked: effective size: %dx%d",width, height);
+    ALOGD("startPreviewLocked: effective size: %dx%d", width, height);
 
     // If we are recording, use the recording video size instead of the preview size
     if (mRecordingEnabled && mMsgEnabled & CAMERA_MSG_VIDEO_FRAME) {
@@ -553,25 +548,19 @@ status_t CameraHardware::startPreviewLocked()
     /* And reinit the memory heaps to reflect the real used size if needed */
     initHeapLocked();
 
-    ALOGD("CameraHardware::startPreviewLocked: StartStreaming");
-
     ret = camera.StartStreaming();
     if (ret != NO_ERROR) {
-        ALOGE("Failed to start streaming");
+        ALOGE("startPreviewLocked: Failed to start streaming");
         return ret;
     }
 
     // setup the preview window geometry in order to use it to zoom the image
     if (mWin != 0) {
-        ALOGD("CameraHardware::setPreviewWindow - Negotiating preview format");
+        //ALOGD("CameraHardware::setPreviewWindow - Negotiating preview format");
         NegotiatePreviewFormat(mWin);
     }
 
-    ALOGD("CameraHardware::startPreviewLocked: starting PreviewThread");
-
     mPreviewThread = new PreviewThread(this);
-
-    ALOGD("CameraHardware::startPreviewLocked: O - this:0x%p",this);
 
     return NO_ERROR;
 }
@@ -580,7 +569,7 @@ status_t CameraHardware::startPreviewLocked()
 
 status_t CameraHardware::startPreview()
 {
-    ALOGD("CameraHardware::startPreview");
+    ALOGD("startPreview");
 
     Mutex::Autolock lock(mLock);
     return startPreviewLocked();
@@ -590,30 +579,25 @@ status_t CameraHardware::startPreview()
 
 void CameraHardware::stopPreviewLocked()
 {
-    ALOGD("CameraHardware::stopPreviewLocked");
+    ALOGD("stopPreviewLocked");
 
     if (mPreviewThread != 0) {
-        ALOGD("CameraHardware::stopPreviewLocked: stopping PreviewThread");
-
         mPreviewThread->requestExitAndWait();
         mPreviewThread.clear();
 
-        ALOGD("CameraHardware::stopPreviewLocked: Uninit");
         camera.Uninit();
-        ALOGD("CameraHardware::stopPreviewLocked: StopStreaming");
         camera.StopStreaming();
-        ALOGD("CameraHardware::stopPreviewLocked: Close");
         camera.Close();
     }
 
-    ALOGD("CameraHardware::stopPreviewLocked: OK");
+    ALOGD("stopPreviewLocked: OK");
 }
 
 
 
 void CameraHardware::stopPreview()
 {
-    ALOGD("CameraHardware::stopPreview");
+    ALOGD("stopPreview");
 
     Mutex::Autolock lock(mLock);
     stopPreviewLocked();
@@ -628,8 +612,8 @@ int CameraHardware::isPreviewEnabled()
         Mutex::Autolock lock(mLock);
         enabled = (mPreviewThread != 0);
     }
-    ALOGD("CameraHardware::isPreviewEnabled: %d", enabled);
 
+    ALOGD("isPreviewEnabled: %d", enabled);
     return enabled;
 }
 
@@ -637,7 +621,7 @@ int CameraHardware::isPreviewEnabled()
 
 status_t CameraHardware::storeMetaDataInBuffers(int value)
 {
-    ALOGD("CameraHardware::storeMetaDataInBuffers: %d", value);
+    ALOGD("storeMetaDataInBuffers: %d", value);
 
     // Do not accept to store metadata in buffers - We will always store
     //  YUV data on video buffers. Metadata, in the case of Nvidia Tegra2
@@ -650,7 +634,7 @@ status_t CameraHardware::storeMetaDataInBuffers(int value)
 
 status_t CameraHardware::startRecording()
 {
-    ALOGD("CameraHardware::startRecording");
+    ALOGD("startRecording");
     {
         Mutex::Autolock lock(mLock);
         if (!mRecordingEnabled) {
@@ -673,7 +657,7 @@ status_t CameraHardware::startRecording()
 
 void CameraHardware::stopRecording()
 {
-    ALOGD("CameraHardware::stopRecording");
+    ALOGD("stopRecording");
     {
         Mutex::Autolock lock(mLock);
         if (mRecordingEnabled) {
@@ -700,7 +684,7 @@ int CameraHardware::isRecordingEnabled()
         Mutex::Autolock lock(mLock);
         enabled = mRecordingEnabled;
     }
-    ALOGD("CameraHardware::isRecordingEnabled: %d", mRecordingEnabled);
+    ALOGD("isRecordingEnabled: %d", mRecordingEnabled);
     return enabled;
 }
 
@@ -709,14 +693,14 @@ int CameraHardware::isRecordingEnabled()
 void CameraHardware::releaseRecordingFrame(const void* mem)
 {
     UNUSED(mem);
-    ALOGD("CameraHardware::releaseRecordingFrame");
+    ALOGD("releaseRecordingFrame");
 }
 
 
 
 status_t CameraHardware::setAutoFocus()
 {
-    ALOGD("CameraHardware::setAutoFocus");
+    ALOGD("setAutoFocus");
     Mutex::Autolock lock(mLock);
     if (createThread(beginAutoFocusThread, this) == false)
         return UNKNOWN_ERROR;
@@ -727,7 +711,7 @@ status_t CameraHardware::setAutoFocus()
 
 status_t CameraHardware::cancelAutoFocus()
 {
-    ALOGD("CameraHardware::cancelAutoFocus");
+    ALOGD("cancelAutoFocus");
     return NO_ERROR;
 }
 
@@ -735,7 +719,7 @@ status_t CameraHardware::cancelAutoFocus()
 
 status_t CameraHardware::takePicture()
 {
-    ALOGD("CameraHardware::takePicture");
+    ALOGD("takePicture");
     if (createThread(beginPictureThread, this) == false)
         return UNKNOWN_ERROR;
 
@@ -746,7 +730,7 @@ status_t CameraHardware::takePicture()
 
 status_t CameraHardware::cancelPicture()
 {
-    ALOGD("CameraHardware::cancelPicture");
+    ALOGD("cancelPicture");
     return NO_ERROR;
 }
 
@@ -754,7 +738,7 @@ status_t CameraHardware::cancelPicture()
 
 status_t CameraHardware::setParameters(const char* parms)
 {
-    ALOGD("CameraHardware::setParameters");
+    ALOGD("setParameters");
 
     CameraParameters params;
     String8 str8_param(parms);
@@ -772,12 +756,12 @@ status_t CameraHardware::setParameters(const char* parms)
             strcmp(params.getPreviewFormat(),"yuv422sp") &&
             strcmp(params.getPreviewFormat(),"yuv420sp") &&
             strcmp(params.getPreviewFormat(),"yuv420p")) {
-        ALOGE("CameraHardware::setParameters: Unsupported format '%s' for preview",params.getPreviewFormat());
+        ALOGE("setParameters: Unsupported format '%s' for preview",params.getPreviewFormat());
         return BAD_VALUE;
     }
 
     if (strcmp(params.getPictureFormat(), CameraParameters::PIXEL_FORMAT_JPEG)) {
-        ALOGE("CameraHardware::setParameters: Only jpeg still pictures are supported");
+        ALOGE("setParameters: Only jpeg still pictures are supported");
         return BAD_VALUE;
     }
 
@@ -785,24 +769,28 @@ status_t CameraHardware::setParameters(const char* parms)
             strcmp(params.get(CameraParameters::KEY_VIDEO_FRAME_FORMAT),"yuv422sp") &&
             strcmp(params.get(CameraParameters::KEY_VIDEO_FRAME_FORMAT),"yuv420sp") &&
             strcmp(params.get(CameraParameters::KEY_VIDEO_FRAME_FORMAT),"yuv420p")) {
-        ALOGE("CameraHardware::setParameters: Unsupported format '%s' for recording",params.get(CameraParameters::KEY_VIDEO_FRAME_FORMAT));
+        ALOGE("setParameters: Unsupported format '%s' for recording",params.get(CameraParameters::KEY_VIDEO_FRAME_FORMAT));
         return BAD_VALUE;
     }
 
-    int w, h;
+#if 0
+    {
+        int w, h;
 
-    params.getPreviewSize(&w, &h);
-    ALOGD("CameraHardware::setParameters: PREVIEW: Size %dx%d, %d fps, format: %s", w, h, params.getPreviewFrameRate(), params.getPreviewFormat());
+        params.getPreviewSize(&w, &h);
+        ALOGI("setParameters: PREVIEW: Size %dx%d, %d fps, format: %s", w, h, params.getPreviewFrameRate(), params.getPreviewFormat());
 
-    params.getPictureSize(&w, &h);
-    ALOGD("CameraHardware::setParameters: PICTURE: Size %dx%d, format: %s", w, h, params.getPictureFormat());
+        params.getPictureSize(&w, &h);
+        ALOGI("setParameters: PICTURE: Size %dx%d, format: %s", w, h, params.getPictureFormat());
 
-    params.getVideoSize(&w, &h);
-    ALOGD("CameraHardware::setParameters: VIDEO: Size %dx%d, format: %s", w, h, params.get(CameraParameters::KEY_VIDEO_FRAME_FORMAT));
+        params.getVideoSize(&w, &h);
+        ALOGI("setParameters: VIDEO: Size %dx%d, format: %s", w, h, params.get(CameraParameters::KEY_VIDEO_FRAME_FORMAT));
 
-    w = params.getInt(CameraParameters::KEY_JPEG_THUMBNAIL_WIDTH);
-    h = params.getInt(CameraParameters::KEY_JPEG_THUMBNAIL_HEIGHT);
-    ALOGD("CameraHardware::setParameters: THUMBNAIL: Size %dx%d (2)", w, h);
+        w = params.getInt(CameraParameters::KEY_JPEG_THUMBNAIL_WIDTH);
+        h = params.getInt(CameraParameters::KEY_JPEG_THUMBNAIL_HEIGHT);
+        ALOGI("setParameters: THUMBNAIL: Size %dx%d (2)", w, h);
+    }
+#endif
 
     // Store the new parameters
     mParameters = params;
@@ -810,8 +798,6 @@ status_t CameraHardware::setParameters(const char* parms)
     // Recreate the heaps if toggling recording changes the raw preview size
     //  and also restart the preview so we use the new size if needed
     initHeapLocked();
-
-    ALOGD("CameraHardware::setParameters: OK");
 
     return NO_ERROR;
 }
@@ -824,7 +810,7 @@ static char lNoParam = '\0';
 
 char* CameraHardware::getParameters()
 {
-    ALOGD("CameraHardware::getParameters");
+    ALOGD("getParameters");
 
     String8 params;
     {
@@ -848,7 +834,7 @@ char* CameraHardware::getParameters()
 
 void CameraHardware::putParameters(char* params)
 {
-    ALOGD("CameraHardware::putParameters");
+    //ALOGD("CameraHardware::putParameters");
     /* This method simply frees parameters allocated in getParameters(). */
     if (params != NULL && params != &lNoParam) {
         free(params);
@@ -862,7 +848,7 @@ status_t CameraHardware::sendCommand(int32_t command, int32_t arg1, int32_t arg2
     UNUSED(command);
     UNUSED(arg1);
     UNUSED(arg2);
-    ALOGD("CameraHardware::sendCommand");
+    ALOGD("sendCommand");
     return 0;
 }
 
@@ -870,7 +856,7 @@ status_t CameraHardware::sendCommand(int32_t command, int32_t arg1, int32_t arg2
 
 void CameraHardware::releaseCamera()
 {
-    ALOGD("CameraHardware::releaseCamera");
+    ALOGD("releaseCamera");
     if (mPreviewThread != 0) {
         stopPreview();
     }
@@ -889,7 +875,7 @@ status_t CameraHardware::dumpCamera(int fd)
 
 void CameraHardware::initDefaultParameters()
 {
-    ALOGD("CameraHardware::initDefaultParameters");
+    ALOGD("initDefaultParameters");
 
     CameraParameters p;
     unsigned int i;
@@ -917,13 +903,13 @@ void CameraHardware::initDefaultParameters()
         }
 
         if (i < CAMERA_WAIT - 1) {
-            ALOGI("CameraHardware: sleeping for %s", mVideoDevice);
+            ALOGI("sleeping for %s", mVideoDevice);
             ::usleep(1000 * 1000);
         }
     }
 
     if (opened) {
-        ALOGI("CameraHardware: opened %s", mVideoDevice);
+        ALOGI("opened %s", mVideoDevice);
 
         // Get the default preview format
         pw = camera.getBestPreviewFmt().getWidth();
@@ -1230,7 +1216,7 @@ void CameraHardware::initStaticCameraMetadata()
 
 void CameraHardware::initHeapLocked()
 {
-    ALOGD("CameraHardware::initHeapLocked");
+    ALOGD("initHeapLocked");
 
     int preview_width, preview_height;
     int picture_width, picture_height;
@@ -1247,9 +1233,9 @@ void CameraHardware::initHeapLocked()
     mParameters.getPictureSize(&picture_width, &picture_height);
     mParameters.getVideoSize(&video_width, &video_height);
 
-    ALOGD("CameraHardware::initHeapLocked: preview size=%dx%d", preview_width, preview_height);
-    ALOGD("CameraHardware::initHeapLocked: picture size=%dx%d", picture_width, picture_height);
-    ALOGD("CameraHardware::initHeapLocked: video size=%dx%d", video_width, video_height);
+    ALOGD("initHeapLocked: preview size %dx%d", preview_width, preview_height);
+    ALOGD("initHeapLocked: picture size %dx%d", picture_width, picture_height);
+    ALOGD("initHeapLocked: video size %dx%d", video_width, video_height);
 
     int how_raw_preview_big = 0;
 
@@ -1311,13 +1297,13 @@ void CameraHardware::initHeapLocked()
         mRawPreviewBuffer = NULL;
 
         mRawPreviewHeap = mRequestMemory(-1,mRawPreviewFrameSize,1,mCallbackCookie);
+
         if (mRawPreviewHeap) {
+            ALOGD("initHeapLocked: Raw preview heap allocated");
             mRawPreviewBuffer = mRawPreviewHeap->data;
         } else {
             ALOGE("Unable to allocate memory for RawPreview");
         }
-
-        ALOGD("CameraHardware::initHeapLocked: Raw preview heap allocated");
     }
 
     int how_preview_big = 0;
@@ -1383,11 +1369,10 @@ void CameraHardware::initHeapLocked()
             for (int i = 0; i < kBufferCount; i++) {
                 mPreviewBuffer[i] = (char*)mPreviewHeap->data + (i * mPreviewFrameSize);
             }
+            ALOGD("initHeapLocked: preview heap allocated");
         } else {
             ALOGE("Unable to allocate memory for Preview");
         }
-
-        ALOGD("CameraHardware::initHeapLocked: preview heap allocated");
     }
 
     int how_recording_big = 0;
@@ -1451,11 +1436,10 @@ void CameraHardware::initHeapLocked()
             for (int i = 0; i < kBufferCount; i++) {
                 mRecBuffers[i] = (char*)mRecordingHeap->data + (i * mRecordingFrameSize);
             }
+            ALOGD("initHeapLocked: recording heap allocated");
         } else {
             ALOGE("Unable to allocate memory for Recording");
         }
-
-        ALOGD("CameraHardware::initHeapLocked: recording heap allocated");
     }
 
     int how_picture_big = picture_width * picture_height << 1; // Raw picture heap always in YUYV
@@ -1477,11 +1461,10 @@ void CameraHardware::initHeapLocked()
         mRawPictureHeap = mRequestMemory(-1,mRawPictureBufferSize,1,mCallbackCookie);
         if (mRawPictureHeap) {
             mRawBuffer = mRawPictureHeap->data;
+            ALOGD("initHeapLocked: Raw picture heap allocated");
         } else {
             ALOGE("Unable to allocate memory for RawPicture");
         }
-
-        ALOGD("CameraHardware::initHeapLocked: Raw picture heap allocated");
     }
 
     int how_jpeg_big = picture_width * picture_height << 1; // jpeg maximum size
@@ -1499,11 +1482,12 @@ void CameraHardware::initHeapLocked()
             mJpegPictureHeap = NULL;
         }
         mJpegPictureHeap = mRequestMemory(-1,how_jpeg_big,1,mCallbackCookie);
-        if (!mJpegPictureHeap) {
-            ALOGE("Unable to allocate memory for RawPicture");
-        }
 
-        ALOGD("CameraHardware::initHeapLocked: Jpeg picture heap allocated");
+        if (mJpegPictureHeap) {
+            ALOGD("initHeapLocked: Jpeg picture heap allocated");
+        } else {
+            ALOGE("Unable to allocate memory for JpegPicture");
+        }
     }
 
     // Don't forget to restart the preview if it was stopped...
@@ -1512,12 +1496,14 @@ void CameraHardware::initHeapLocked()
         startPreviewLocked();
     }
 
-    ALOGD("CameraHardware::initHeapLocked: OK");
+    ALOGD("initHeapLocked: OK");
 }
+
+
 
 int CameraHardware::previewThread()
 {
-    ALOGV("CameraHardware::previewThread: this=%p",this);
+    ALOGV("previewThread: this=%p",this);
 
     int previewFrameRate = mParameters.getPreviewFrameRate();
 
@@ -1711,6 +1697,8 @@ int CameraHardware::previewThread()
     return NO_ERROR;
 }
 
+
+
 void CameraHardware::fillPreviewWindow(uint8_t* yuyv, int srcWidth, int srcHeight)
 {
     // Preview to a preview window...
@@ -1866,7 +1854,7 @@ void CameraHardware::fillPreviewWindow(uint8_t* yuyv, int srcWidth, int srcHeigh
 
 int CameraHardware::beginAutoFocusThread(void *cookie)
 {
-    ALOGD("CameraHardware::beginAutoFocusThread");
+    ALOGD("beginAutoFocusThread");
     CameraHardware *c = (CameraHardware *)cookie;
     return c->autoFocusThread();
 }
@@ -1875,7 +1863,7 @@ int CameraHardware::beginAutoFocusThread(void *cookie)
 
 int CameraHardware::autoFocusThread()
 {
-    ALOGD("CameraHardware::autoFocusThread");
+    ALOGD("autoFocusThread");
     if (mMsgEnabled & CAMERA_MSG_FOCUS)
         mNotifyCb(CAMERA_MSG_FOCUS, true, 0, mCallbackCookie);
     return NO_ERROR;
@@ -1885,7 +1873,7 @@ int CameraHardware::autoFocusThread()
 
 int CameraHardware::beginPictureThread(void *cookie)
 {
-    ALOGD("CameraHardware::beginPictureThread");
+    ALOGD("beginPictureThread");
     CameraHardware *c = (CameraHardware *)cookie;
     return c->pictureThread();
 }
@@ -1894,7 +1882,7 @@ int CameraHardware::beginPictureThread(void *cookie)
 
 int CameraHardware::pictureThread()
 {
-    ALOGD("CameraHardware::pictureThread");
+    ALOGD("pictureThread");
 
     bool raw = false;
     bool jpeg = false;
@@ -1904,7 +1892,7 @@ int CameraHardware::pictureThread()
 
         int w, h;
         mParameters.getPictureSize(&w, &h);
-        ALOGD("CameraHardware::pictureThread: taking picture of %dx%d", w, h);
+        ALOGD("pictureThread: taking picture of %dx%d", w, h);
 
         /* Make sure to remember if the shutter must be enabled or not */
         if (mMsgEnabled & CAMERA_MSG_SHUTTER) {
@@ -1916,7 +1904,7 @@ int CameraHardware::pictureThread()
             stopPreviewLocked();
         }
 
-        ALOGD("CameraHardware::pictureThread: taking picture (%d x %d)", w, h);
+        ALOGD("pictureThread: taking picture (%d x %d)", w, h);
 
         if (camera.Open(mVideoDevice) == NO_ERROR) {
             camera.Init(w, h, 1);
@@ -1924,7 +1912,7 @@ int CameraHardware::pictureThread()
             /* Retrieve the real size being used */
             camera.getSize(w,h);
 
-            ALOGD("CameraHardware::pictureThread: effective size: %dx%d",w, h);
+            ALOGD("pictureThread: effective size: %dx%d",w, h);
 
             /* Store it as the picture size to use */
             mParameters.setPictureSize(w, h);
@@ -1934,7 +1922,7 @@ int CameraHardware::pictureThread()
 
             camera.StartStreaming();
 
-            ALOGD("CameraHardware::pictureThread: waiting until camera picture stabilizes...");
+            ALOGD("pictureThread: waiting until camera picture stabilizes...");
 
             int maxFramesToWait = 8;
             int luminanceStableFor = 0;
@@ -1974,11 +1962,11 @@ int CameraHardware::pictureThread()
                 ALOGD("luminance: %4d, dif: %4d, thresh: %d, stableFor: %d, maxWait: %d", luminance, dif, thresh, luminanceStableFor, maxFramesToWait);
             }
 
-            ALOGD("CameraHardware::pictureThread: picture taken");
+            ALOGD("pictureThread: picture taken");
 
             if (mMsgEnabled & CAMERA_MSG_RAW_IMAGE) {
 
-                ALOGD("CameraHardware::pictureThread: took raw picture");
+                ALOGD("pictureThread: took raw picture");
                 raw = true;
             }
 
@@ -2001,7 +1989,7 @@ int CameraHardware::pictureThread()
                     mJpegPictureHeap = mRequestMemory(-1,fileSize,1,mCallbackCookie);
                     if (mJpegPictureHeap) {
                         memcpy(mJpegPictureHeap->data,jpegBuff,fileSize);
-                        ALOGD("CameraHardware::pictureThread: took jpeg picture compressed to %d bytes, q=%d", fileSize, quality);
+                        ALOGD("pictureThread: took jpeg picture compressed to %d bytes, q=%d", fileSize, quality);
                         jpeg = true;
                     } else {
                         ALOGE("Unable to allocate memory for RawPicture");
@@ -2020,7 +2008,7 @@ int CameraHardware::pictureThread()
             camera.Close();
 
         } else {
-            ALOGE("CameraHardware::pictureThread: failed to grab image");
+            ALOGE("pictureThread: failed to grab image");
         }
     }
 
@@ -2041,7 +2029,7 @@ int CameraHardware::pictureThread()
         mDataCb(CAMERA_MSG_COMPRESSED_IMAGE, mJpegPictureHeap, 0, NULL, mCallbackCookie);
     }
 
-    ALOGD("CameraHardware::pictureThread OK");
+    ALOGD("pictureThread OK");
 
     return NO_ERROR;
 }
