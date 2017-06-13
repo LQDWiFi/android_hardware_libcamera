@@ -217,13 +217,31 @@ public:
 
 private:
 
+    class FromCamera
+    {
+    public:
+        FromCamera();
+
+        int pw;
+        int ph;
+        int pfps;
+        int fw;
+        int fh;
+        SortedVector<SurfaceSize> avSizes;
+        SortedVector<int> avFps;
+
+        bool set(CameraHardware& ch);
+    };
+
+
     static const int kBufferCount = 4;
 
-    void initDefaultParameters();
+    bool tryInitDefaultParameters(const char* videoFile);
     void initStaticCameraMetadata();
     void initHeapLocked();
 
-    class PreviewThread : public Thread {
+    class PreviewThread : public Thread
+    {
         CameraHardware* mHardware;
 
     public:
@@ -236,6 +254,16 @@ private:
     void     stopPreviewLocked();
 
     int previewThread();
+
+    class HotPlugThread : public Thread
+    {
+        CameraHardware* mHardware;
+
+    public:
+        HotPlugThread(CameraHardware* hw);
+        virtual void onFirstRef();
+        virtual bool threadLoop();
+    };
 
     static int beginAutoFocusThread(void *cookie);
     int autoFocusThread();
@@ -283,6 +311,7 @@ private:
 
     // protected by mLock
     sp<PreviewThread>   mPreviewThread;
+    sp<HotPlugThread>   mHotPlugThread;
 
     camera_notify_callback      mNotifyCb;
     camera_data_callback        mDataCb;

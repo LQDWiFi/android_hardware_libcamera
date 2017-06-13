@@ -172,10 +172,15 @@ CameraHardware::CameraHardware(char* devLocation) :
     priv = this;
 
     // Power on camera
-    PowerOn();
+    // PowerOn();
 
-    // Init default parameters
-    initDefaultParameters();
+    // Load some initial default parmeters
+    FromCamera fc;
+    fc.set(*this);
+
+    mHotPlugThread = new HotPlugThread(this);
+
+    // REVISIT no longer used
     initStaticCameraMetadata();
 }
 
@@ -186,6 +191,11 @@ CameraHardware::~CameraHardware()
     ALOGD("CameraHardware::destruct");
     if (mPreviewThread != 0) {
         stopPreview();
+    }
+
+    if (mHotPlugThread != 0) {
+        mHotPlugThread->requestExitAndWait();
+        mHotPlugThread.clear();
     }
 
     // Release all memory heaps
@@ -323,6 +333,33 @@ bool CameraHardware::NegotiatePreviewFormat(struct preview_stream_ops* win)
     mPreviewWinHeight = ph;
 
     return true;
+}
+
+
+
+CameraHardware::HotPlugThread::HotPlugThread(CameraHardware* hw)
+  : mHardware(hw)
+{
+}
+
+
+
+void CameraHardware::HotPlugThread::onFirstRef()
+{
+    run("CameraHotPlugThread", PRIORITY_BACKGROUND);
+}
+
+
+
+bool CameraHardware::HotPlugThread::threadLoop()
+{
+    auto ok = mHardware->tryInitDefaultParameters(mHardware->mVideoDevice);
+
+    if (!ok) {
+        ::usleep(1000 * 1000);
+    }
+
+    return !ok;
 }
 
 
@@ -821,14 +858,18 @@ char* CameraHardware::getParameters()
         params = mParameters.flatten();
     }
 
-    char* ret_str = reinterpret_cast<char*>(malloc(sizeof(char) * (params.length()+1)));
-    memset(ret_str, 0, params.length()+1);
-    if (ret_str != NULL) {
-        strncpy(ret_str, params.string(), params.length()+1);
-        return ret_str;
+    if (!params.isEmpty()) {
+        char* ret_str = reinterpret_cast<char*>(malloc(sizeof(char) * (params.length()+1)));
+        memset(ret_str, 0, params.length()+1);
+
+        if (ret_str != NULL) {
+            strncpy(ret_str, params.string(), params.length()+1);
+            return ret_str;
+        }
+
+        ALOGE("%s: Unable to allocate string for %s", __FUNCTION__, params.string());
     }
 
-    ALOGE("%s: Unable to allocate string for %s", __FUNCTION__, params.string());
     /* Apparently, we can't return NULL fron this routine. */
     return &lNoParam;
 }
@@ -874,88 +915,77 @@ status_t CameraHardware::dumpCamera(int fd)
     return -EINVAL;
 }
 
+
 // ---------------------------------------------------------------------------
 
-void CameraHardware::initDefaultParameters()
+
+bool CameraHardware::tryInitDefaultParameters(const char* videoFile)
 {
-    ALOGD("initDefaultParameters");
-
-    CameraParameters p;
-    unsigned int i;
-
-    int pw = MIN_WIDTH;
-    int ph = MIN_HEIGHT;
-    int pfps = 30;
-    int fw = MIN_WIDTH;
-    int fh = MIN_HEIGHT;
-    SortedVector<SurfaceSize> avSizes;
-    SortedVector<int> avFps;
-
-    /*  Ugly hack: Loop for some time while waiting for the camera to be
-        enumerated.  If we can't get the available sizes then things fail
-        later in the camera service.
+    /*  This will be called from the hotplug thread to try to
+        open the video file.  This returns true if the parameters are set.
     */
-    bool opened = false;
+    FromCamera fc;
 
-    for (int i = 0; i < CAMERA_WAIT; ++i)
     {
-        if (camera.Open(mVideoDevice) == NO_ERROR) {
-            opened = true;
-            break;
+        ALOGD("tryInitDefaultParameters");
+        Mutex::Autolock lock(mLock);
+
+        /*  Ugly hack: Loop for some time while waiting for the camera to be
+            enumerated.  If we can't get the available sizes then things fail
+            later in the camera service.
+        */
+        if (camera.Open(videoFile) != NO_ERROR) {
+            ALOGI("did not open %s", videoFile);
+            return false;
         }
 
-        if (i < CAMERA_WAIT - 1) {
-            ALOGI("sleeping for %s", mVideoDevice);
-            ::usleep(1000 * 1000);
-        }
-    }
-
-    if (opened) {
-        ALOGI("opened %s", mVideoDevice);
+        ALOGI("opened %s", videoFile);
 
         // Get the default preview format
-        pw = camera.getBestPreviewFmt().getWidth();
-        ph = camera.getBestPreviewFmt().getHeight();
-        pfps = camera.getBestPreviewFmt().getFps();
+        fc.pw = camera.getBestPreviewFmt().getWidth();
+        fc.ph = camera.getBestPreviewFmt().getHeight();
+        fc.pfps = camera.getBestPreviewFmt().getFps();
 
         // Get the default picture format
-        fw = camera.getBestPictureFmt().getWidth();
-        fh = camera.getBestPictureFmt().getHeight();
+        fc.fw = camera.getBestPictureFmt().getWidth();
+        fc.fh = camera.getBestPictureFmt().getHeight();
 
         // Get all the available sizes
-        avSizes = camera.getAvailableSizes();
+        fc.avSizes = camera.getAvailableSizes();
 
         // Get all the available Fps
-        avFps = camera.getAvailableFps();
-    } else {
-        ALOGE("cannot open device.");
-
-        // We need something
-        avSizes.add(SurfaceSize(640,480)); // VGA
-        avFps.add(30);
+        fc.avFps = camera.getAvailableFps();
     }
 
-#if 0
-    // Add some sizes that some specific apps expect to find:
-    //  GTalk expects 320x200
-    //  Fring expects 240x160
-    // And also add standard resolutions found in low end cameras, as
-    //  android apps could be expecting to find them
-    // The V4LCamera handles those resolutions by choosing the next
-    //  larger one and cropping the captured frames to the requested size
+    // The camera must be unlocked at this point
+    return fc.set(*this);
+}
 
-    avSizes.add(SurfaceSize(480,320)); // HVGA
-    avSizes.add(SurfaceSize(432,320)); // 1.35-to-1, for photos. (Rounded up from 1.3333 to 1)
-    avSizes.add(SurfaceSize(352,288)); // CIF
-    avSizes.add(SurfaceSize(320,240)); // QVGA
-    avSizes.add(SurfaceSize(320,200));
-    avSizes.add(SurfaceSize(240,160)); // SQVGA
-    avSizes.add(SurfaceSize(176,144)); // QCIF
-#endif
+
+
+CameraHardware::FromCamera::FromCamera()
+{
+    pw = MIN_WIDTH;
+    ph = MIN_HEIGHT;
+    pfps = 30;
+    fw = MIN_WIDTH;
+    fh = MIN_HEIGHT;
+
+    // We need something in lieu of real camera parameters
+    avSizes.add(SurfaceSize(640,480)); // VGA
+    avFps.add(30);
+}
+
+
+bool CameraHardware::FromCamera::set(CameraHardware& ch)
+{
+    /*  This calls setParameters() which locks CameraHardware.
+    */
+    CameraParameters p;
 
     // Convert the sizes to text
     String8 szs("");
-    for (i = 0; i < avSizes.size(); i++) {
+    for (size_t i = 0; i < avSizes.size(); i++) {
         char descr[32];
         SurfaceSize ss = avSizes[i];
         sprintf(descr,"%dx%d",ss.getWidth(),ss.getHeight());
@@ -967,7 +997,7 @@ void CameraHardware::initDefaultParameters()
 
     // Convert the fps to ranges in text
     String8 fpsranges("");
-    for (i = 0; i < avFps.size(); i++) {
+    for (size_t i = 0; i < avFps.size(); i++) {
         char descr[32];
         int ss = avFps[i];
         sprintf(descr,"(%d,%d)",ss,ss);
@@ -979,7 +1009,7 @@ void CameraHardware::initDefaultParameters()
 
     // Convert the fps to text
     String8 fps("");
-    for (i = 0; i < avFps.size(); i++) {
+    for (size_t i = 0; i < avFps.size(); i++) {
         char descr[32];
         int ss = avFps[i];
         sprintf(descr,"%d",ss);
@@ -1072,10 +1102,14 @@ void CameraHardware::initDefaultParameters()
     p.set(CameraParameters::KEY_EXPOSURE_COMPENSATION_STEP, "0.5");
     p.set(CameraParameters::KEY_EXPOSURE_COMPENSATION, "0");
 
-    if (setParameters(p.flatten()) != NO_ERROR) {
-        ALOGE("CameraHardware::initDefaultParameters: Failed to set default parameters.");
+    if (ch.setParameters(p.flatten()) != NO_ERROR) {
+        ALOGE("CameraHardware::FromCamera: Failed to set default parameters.");
+        return false;
     }
+
+    return true;
 }
+
 
 
 
