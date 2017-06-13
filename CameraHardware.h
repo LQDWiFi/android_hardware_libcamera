@@ -280,7 +280,6 @@ private:
     int                 mPreviewWinWidth;
     int                 mPreviewWinHeight;
 
-    bool                mHaveParameters;
     CameraParameters    mParameters;
     char*               mVideoDevice;
 

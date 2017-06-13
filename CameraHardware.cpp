@@ -120,7 +120,6 @@ CameraHardware::CameraHardware(char* devLocation) :
         mPreviewWinWidth(0),
         mPreviewWinHeight(0),
 
-        mHaveParameters(false),
         mParameters(),
 
         mRawPreviewHeap(0),
@@ -835,7 +834,6 @@ status_t CameraHardware::setParameters(const char* parms)
 
     // Store the new parameters
     mParameters = params;
-    mHaveParameters = true;
 
     // Recreate the heaps if toggling recording changes the raw preview size
     //  and also restart the preview so we use the new size if needed
@@ -857,9 +855,7 @@ char* CameraHardware::getParameters()
     String8 params;
     {
         Mutex::Autolock lock(mLock);
-        if (mHaveParameters) {
-            params = mParameters.flatten();
-        }
+        params = mParameters.flatten();
     }
 
     if (!params.isEmpty()) {
@@ -931,20 +927,15 @@ bool CameraHardware::tryInitDefaultParameters(const char* videoFile)
     FromCamera fc;
 
     {
-        Mutex::Autolock lock(mLock);
-
-        if (mHaveParameters) {
-            return true;
-        }
-
         ALOGD("tryInitDefaultParameters");
-
+        Mutex::Autolock lock(mLock);
 
         /*  Ugly hack: Loop for some time while waiting for the camera to be
             enumerated.  If we can't get the available sizes then things fail
             later in the camera service.
         */
         if (camera.Open(videoFile) != NO_ERROR) {
+            ALOGI("did not open %s", videoFile);
             return false;
         }
 
