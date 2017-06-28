@@ -367,6 +367,7 @@ int V4L2Camera::Init(int width, int height, int fps)
             return ret;
         }
 
+        ALOGD("V4L2Camera::Init: mmap length=%d, offset=%d", videoIn->buf.length, videoIn->buf.m.offset);
         videoIn->mem[i] = mmap (0,
                                 videoIn->buf.length,
                                 PROT_READ | PROT_WRITE,
@@ -561,7 +562,7 @@ void V4L2Camera::GrabRawFrame (void *frameBuffer, int maxSize)
     // And the pointer to the start of the image
     uint8_t* src = (uint8_t*)videoIn->mem[videoIn->buf.index] + videoIn->capCropOffset;
 
-    LOG_FRAME("V4L2Camera::GrabRawFrame - Got Raw frame (%dx%d) (buf:%d@0x%p, len:%d)",videoIn->format.fmt.pix.width,videoIn->format.fmt.pix.height,videoIn->buf.index,src,videoIn->buf.bytesused);
+    LOG_FRAME("V4L2Camera::GrabRawFrame - Got Raw frame (%dx%d) (buf:%d @ %p, len:%d)",videoIn->format.fmt.pix.width,videoIn->format.fmt.pix.height,videoIn->buf.index,src,videoIn->buf.bytesused);
 
     /* Avoid crashing! - Make sure there is enough room in the output buffer! */
     if (maxSize < videoIn->outFrameSize) {
@@ -657,7 +658,13 @@ void V4L2Camera::GrabRawFrame (void *frameBuffer, int maxSize)
                     uint8_t* pdst = (uint8_t*)frameBuffer;
                     uint8_t* psrc = src;
                     int ss = videoIn->outWidth << 1;
+                    //LOG_FRAME("V4L2Camera::GrabRawFrame - copying out height=%d, bytesperline=%d, strideOut=%d", videoIn->outHeight, videoIn->format.fmt.pix.bytesperline, strideOut);
                     for (h = 0; h < videoIn->outHeight; h++) {
+                        //LOG_FRAME("V4L2Camera::GrabRawFrame - pdst=0x%x, psrc=0x%x", pdst, psrc);
+                        if (psrc + videoIn->format.fmt.pix.bytesperline >= src + videoIn->buf.length) {
+                            LOG_FRAME("V4L2Camera::GrabRawFrame - truncated frame");
+                            break;
+                        }
                         memcpy(pdst,psrc,ss);
                         pdst += strideOut;
                         psrc += videoIn->format.fmt.pix.bytesperline;
