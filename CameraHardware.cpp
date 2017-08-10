@@ -30,14 +30,22 @@
 #include "Converter.h"
 #include "Metadata.h"
 
+static bool
+isLocked(android::Mutex& mLock)
+{
+    if (mLock.tryLock() == 0) {
+        mLock.unlock();
+        return false;
+    }
+    return true;
+}
+
+
 #define ARRAY_SIZE(a) (sizeof(a) / sizeof(a[0]))
 #define UNUSED(x) ((void)(x))
 
 #define MIN_WIDTH       320
 #define MIN_HEIGHT      240
-
-// in seconds
-#define CAMERA_WAIT     60
 
 #ifndef PIXEL_FORMAT_RGB_888
 #define PIXEL_FORMAT_RGB_888 3 /* */
@@ -115,6 +123,7 @@ namespace android {
 
 
 CameraHardware::CameraHardware(char* devLocation) :
+        mReady(false),
         mWin(0),
         mPreviewWinFmt(PIXEL_FORMAT_UNKNOWN),
         mPreviewWinWidth(0),
@@ -175,6 +184,7 @@ CameraHardware::CameraHardware(char* devLocation) :
     // PowerOn();
 
     // Load some initial default parmeters
+    // We can skip the lock in the constructor.
     FromCamera fc;
     fc.set(*this);
 
@@ -262,7 +272,7 @@ bool CameraHardware::PowerOn()
     int timeOut = 500;
     do {
         // Try to open the video capture device
-        handle = ::open(mVideoDevice,O_RDWR);
+        handle = ::open(mVideoDevice.string(),O_RDWR);
         if (handle >= 0)
             break;
         // Wait a bit
@@ -391,7 +401,8 @@ status_t CameraHardware::closeCamera()
 status_t CameraHardware::getCameraInfo(struct camera_info* info, int facing,
                                        int orientation)
 {
-    ALOGD("getCameraInfo");
+    //ALOGD("getCameraInfo");
+    ALOGD("getCameraInfo locked=%d", isLocked(mLock));
     info->facing = facing;
     info->orientation = orientation;
     info->device_version = CAMERA_DEVICE_API_VERSION_1_0;
@@ -429,6 +440,7 @@ status_t CameraHardware::setPreviewWindow(struct preview_stream_ops* window)
         }
 
     }
+
     return NO_ERROR;
 }
 
@@ -515,16 +527,70 @@ int CameraHardware::isMsgTypeEnabled(int32_t msgType)
 
 
 
+bool
+CameraHardware::isReady()
+{
+    Mutex::Autolock lock(mLock);
+    return mReady;
+}
+
+
+
+void
+CameraHardware::awaitReady()
+{
+    ALOGD("awaitReady");
+    Mutex::Autolock lock(mLock);
+
+    for (;;) {
+        if (mReady) {
+            return;
+        }
+
+        mReadyCond.wait(mLock);
+
+    }
+}
+
+
+
+bool
+CameraHardware::awaitReady(nsecs_t reltime)
+{
+    ALOGD("awaitReady reltime");
+    Mutex::Autolock lock(mLock);
+
+    for (;;) {
+        if (mReady) {
+            return true;
+        }
+
+        // std::condition_variable
+        auto status = mReadyCond.waitRelative(mLock, reltime);
+
+        if (status == TIMED_OUT) {
+            return false;
+        }
+    }
+
+    // unreachable
+    return false;
+}
+
+
+
 CameraHardware::PreviewThread::PreviewThread(CameraHardware* hw) :
         Thread(false),
         mHardware(hw)
 {
+    ALOGD("PreviewThread: constructed, locked=%d", isLocked(mHardware->mLock));
 }
 
 
 
 void CameraHardware::PreviewThread::onFirstRef()
 {
+    ALOGD("PreviewThread: onFirstRef, locked=%d", isLocked(mHardware->mLock));
     run("CameraPreviewThread", PRIORITY_URGENT_DISPLAY);
 }
 
@@ -532,6 +598,7 @@ void CameraHardware::PreviewThread::onFirstRef()
 
 bool CameraHardware::PreviewThread::threadLoop()
 {
+    ALOGD("PreviewThread: threadLoop, locked=%d", isLocked(mHardware->mLock));
     mHardware->previewThread();
     // loop until we need to quit
     return true;
@@ -542,6 +609,12 @@ bool CameraHardware::PreviewThread::threadLoop()
 status_t CameraHardware::startPreviewLocked()
 {
     ALOGD("startPreviewLocked");
+
+    if (!mReady) {
+        ALOGD("startPreviewLocked: camera not ready");
+        return NO_INIT;
+    }
+
 
     if (mPreviewThread != 0) {
         ALOGD("startPreviewLocked: preview already running");
@@ -559,12 +632,14 @@ status_t CameraHardware::startPreviewLocked()
 
     int fps = mParameters.getPreviewFrameRate();
 
+    ALOGD("startPreviewLocked: opening %s", mVideoDevice.string());
     status_t ret = camera.Open(mVideoDevice);
     if (ret != NO_ERROR) {
         ALOGE("startPreviewLocked: Failed to initialize Camera");
         return ret;
     }
 
+    ALOGD("startPreviewLocked: Init %dx%d", width, height);
     ret = camera.Init(width, height, fps);
     if (ret != NO_ERROR) {
         ALOGE("startPreviewLocked: Failed to setup streaming");
@@ -588,6 +663,7 @@ status_t CameraHardware::startPreviewLocked()
     /* And reinit the memory heaps to reflect the real used size if needed */
     initHeapLocked();
 
+    ALOGD("startPreviewLocked: start streaming");
     ret = camera.StartStreaming();
     if (ret != NO_ERROR) {
         ALOGE("startPreviewLocked: Failed to start streaming");
@@ -596,12 +672,14 @@ status_t CameraHardware::startPreviewLocked()
 
     // setup the preview window geometry in order to use it to zoom the image
     if (mWin != 0) {
-        //ALOGD("CameraHardware::setPreviewWindow - Negotiating preview format");
+        ALOGD("CameraHardware::setPreviewWindow - Negotiating preview format");
         NegotiatePreviewFormat(mWin);
     }
 
+    ALOGD("startPreviewLocked: starting the preview thread");
     mPreviewThread = new PreviewThread(this);
 
+    ALOGD("startPreviewLocked: done");
     return NO_ERROR;
 }
 
@@ -610,9 +688,15 @@ status_t CameraHardware::startPreviewLocked()
 status_t CameraHardware::startPreview()
 {
     ALOGD("startPreview");
+    bool ok;
 
-    Mutex::Autolock lock(mLock);
-    return startPreviewLocked();
+    {
+        Mutex::Autolock lock(mLock);
+        ok = startPreviewLocked();
+    }
+
+    ALOGD("startPreview exit, lock=%d", isLocked(mLock));
+    return ok;
 }
 
 
@@ -629,8 +713,6 @@ void CameraHardware::stopPreviewLocked()
         camera.StopStreaming();
         camera.Close();
     }
-
-    ALOGD("stopPreviewLocked: OK");
 }
 
 
@@ -780,11 +862,19 @@ status_t CameraHardware::setParameters(const char* parms)
 {
     ALOGD("setParameters");
 
+    Mutex::Autolock lock(mLock);
+    return setParametersLocked(parms);
+}
+
+
+
+status_t CameraHardware::setParametersLocked(const char* parms)
+{
+    ALOGD("setParametersLocked");
+
     CameraParameters params;
     String8 str8_param(parms);
     params.unflatten(str8_param);
-
-    Mutex::Autolock lock(mLock);
 
     // If no changes, trivially accept it!
     if (params.flatten() == mParameters.flatten()) {
@@ -813,8 +903,9 @@ status_t CameraHardware::setParameters(const char* parms)
         return BAD_VALUE;
     }
 
-#if 0
+#if 1
     {
+        // For debugging
         int w, h;
 
         params.getPreviewSize(&w, &h);
@@ -834,6 +925,8 @@ status_t CameraHardware::setParameters(const char* parms)
 
     // Store the new parameters
     mParameters = params;
+// REVISIT
+mParameters.setPreviewSize(1920, 1080);
 
     // Recreate the heaps if toggling recording changes the raw preview size
     //  and also restart the preview so we use the new size if needed
@@ -850,7 +943,7 @@ static char lNoParam = '\0';
 
 char* CameraHardware::getParameters()
 {
-    ALOGD("getParameters");
+    ALOGD("getParameters, locked=%d", isLocked(mLock));
 
     String8 params;
     {
@@ -858,6 +951,7 @@ char* CameraHardware::getParameters()
         params = mParameters.flatten();
     }
 
+    ALOGD("getParameters, got em");
     if (!params.isEmpty()) {
         char* ret_str = reinterpret_cast<char*>(malloc(sizeof(char) * (params.length()+1)));
         memset(ret_str, 0, params.length()+1);
@@ -919,46 +1013,52 @@ status_t CameraHardware::dumpCamera(int fd)
 // ---------------------------------------------------------------------------
 
 
-bool CameraHardware::tryInitDefaultParameters(const char* videoFile)
+bool CameraHardware::tryInitDefaultParameters(const String8& videoFile)
 {
     /*  This will be called from the hotplug thread to try to
-        open the video file.  This returns true if the parameters are set.
+        open the video file.  It may take a long time for the camera to
+        be enumerated.
+        
+        This returns true if the parameters are set.
     */
     FromCamera fc;
 
-    {
-        ALOGD("tryInitDefaultParameters");
-        Mutex::Autolock lock(mLock);
+    ALOGD("tryInitDefaultParameters");
+    Mutex::Autolock lock(mLock);
 
-        /*  Ugly hack: Loop for some time while waiting for the camera to be
-            enumerated.  If we can't get the available sizes then things fail
-            later in the camera service.
-        */
-        if (camera.Open(videoFile) != NO_ERROR) {
-            ALOGI("did not open %s", videoFile);
-            return false;
-        }
-
-        ALOGI("opened %s", videoFile);
-
-        // Get the default preview format
-        fc.pw = camera.getBestPreviewFmt().getWidth();
-        fc.ph = camera.getBestPreviewFmt().getHeight();
-        fc.pfps = camera.getBestPreviewFmt().getFps();
-
-        // Get the default picture format
-        fc.fw = camera.getBestPictureFmt().getWidth();
-        fc.fh = camera.getBestPictureFmt().getHeight();
-
-        // Get all the available sizes
-        fc.avSizes = camera.getAvailableSizes();
-
-        // Get all the available Fps
-        fc.avFps = camera.getAvailableFps();
+    if (camera.Open(videoFile) != NO_ERROR) {
+        ALOGI("did not open %s", videoFile.string());
+        return false;
     }
 
-    // The camera must be unlocked at this point
-    return fc.set(*this);
+    ALOGI("opened %s", videoFile.string());
+
+    // Get the default preview format
+    fc.pw = camera.getBestPreviewFmt().getWidth();
+    fc.ph = camera.getBestPreviewFmt().getHeight();
+    fc.pfps = camera.getBestPreviewFmt().getFps();
+
+    // Get the default picture format
+    fc.fw = camera.getBestPictureFmt().getWidth();
+    fc.fh = camera.getBestPictureFmt().getHeight();
+
+    // Get all the available sizes
+    fc.avSizes = camera.getAvailableSizes();
+
+    // Get all the available Fps
+    fc.avFps = camera.getAvailableFps();
+
+    // Allow the preview thread to start
+    mReady = true;
+
+    // This will call setParametersLocked().
+    auto ok = fc.set(*this);
+
+    // Signal that the camera is ready.
+    mReadyCond.broadcast();
+
+    ALOGD("tryInitDefaultParameters exit");
+    return ok;
 }
 
 
@@ -979,7 +1079,8 @@ CameraHardware::FromCamera::FromCamera()
 
 bool CameraHardware::FromCamera::set(CameraHardware& ch)
 {
-    /*  This calls setParameters() which locks CameraHardware.
+    /*  This calls setParametersLocked(). The caller must have
+        the camera locked.
     */
     CameraParameters p;
 
@@ -1102,7 +1203,7 @@ bool CameraHardware::FromCamera::set(CameraHardware& ch)
     p.set(CameraParameters::KEY_EXPOSURE_COMPENSATION_STEP, "0.5");
     p.set(CameraParameters::KEY_EXPOSURE_COMPENSATION, "0");
 
-    if (ch.setParameters(p.flatten()) != NO_ERROR) {
+    if (ch.setParametersLocked(p.flatten()) != NO_ERROR) {
         ALOGE("CameraHardware::FromCamera: Failed to set default parameters.");
         return false;
     }
@@ -1635,7 +1736,7 @@ int CameraHardware::previewThread()
         }
 
         if (mMsgEnabled & CAMERA_MSG_PREVIEW_FRAME) {
-            //ALOGD("CameraHardware::previewThread: posting preview frame...");
+            ALOGD("CameraHardware::previewThread: posting preview frame...");
 
             // Here we could eventually have a problem: If we are recording, the recording size
             //  takes precedence over the preview size. So, the rawBase buffer could be of a
@@ -1712,6 +1813,7 @@ int CameraHardware::previewThread()
 
         // Delay a little ... and reattempt the lock on the next iteration
         delay >>= 7;
+        usleep(delay);
     }
 
     // We must schedule the callbacks Outside the lock, or the caller
@@ -1728,7 +1830,7 @@ int CameraHardware::previewThread()
     ALOGV("previewThread OK");
 
     // Wait for it...
-    usleep(delay);
+    //usleep(delay);
 
     return NO_ERROR;
 }

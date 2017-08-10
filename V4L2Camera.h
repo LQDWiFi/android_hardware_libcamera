@@ -14,6 +14,7 @@
 #include <binder/MemoryBase.h>
 #include <binder/MemoryHeapBase.h>
 #include <utils/SortedVector.h>
+#include <utils/String8.h>
 #include "uvc_compat.h"
 #include "SurfaceDesc.h"
 
@@ -46,7 +47,7 @@ public:
     V4L2Camera();
     ~V4L2Camera();
 
-    int Open (const char *device);
+    int Open (const String8& device);
     void Close ();
 
     int Init (int width, int height, int fps);

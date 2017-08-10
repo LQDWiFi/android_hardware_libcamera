@@ -51,7 +51,7 @@ V4L2Camera::~V4L2Camera()
     free(videoIn);
 }
 
-int V4L2Camera::Open (const char *device)
+int V4L2Camera::Open (const String8& device)
 {
     int ret;
 
@@ -60,8 +60,8 @@ int V4L2Camera::Open (const char *device)
 
     memset(videoIn, 0, sizeof (struct vdIn));
 
-    if ((fd = open(device, O_RDWR)) == -1) {
-        ALOGE("ERROR opening V4L interface %s: %s", device, strerror(errno));
+    if ((fd = open(device.string(), O_RDWR)) == -1) {
+        ALOGE("ERROR opening V4L interface %s: %s", device.string(), strerror(errno));
         return -1;
     }
 

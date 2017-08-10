@@ -22,7 +22,7 @@
 #include <system/camera_metadata.h>
 #include <hardware/camera.h>
 #include <utils/threads.h>
-#include <utils/threads.h>
+#include <utils/String8.h>
 #include "V4L2Camera.h"
 
 namespace android {
@@ -62,6 +62,20 @@ public:
      *  0 if message(s) is (are) disabled, != 0 if enabled.
      */
     int isMsgTypeEnabled(int32_t msg_type);
+
+    /*  This tests if the camera is ready to go. When it is ready
+        some default parameters such as the preferred preview size
+        will be estabished by querying the camera.
+    */
+    bool    isReady();
+
+    // Wait until the camera becomes ready.
+    void    awaitReady();
+
+    /*  Wait until the camera becomes ready.
+        This returns false it there was a time-out.
+    */
+    bool    awaitReady(nsecs_t reltime);
 
     /* Actual handler for camera_device_ops_t::start_preview callback.
      * NOTE: When this method is called the object is locked.
@@ -212,8 +226,7 @@ public:
      * NOTE: When this method is called the object is locked.
      * Note that failures in this method are reported as negave EXXX statuses.
      */
-    status_t getCameraInfo(struct camera_info* info, int facing,
-                                  int orientation);
+    status_t getCameraInfo(struct camera_info* info, int facing, int orientation);
 
 private:
 
@@ -236,7 +249,7 @@ private:
 
     static const int kBufferCount = 4;
 
-    bool tryInitDefaultParameters(const char* videoFile);
+    bool tryInitDefaultParameters(const String8& videoFile);
     void initStaticCameraMetadata();
     void initHeapLocked();
 
@@ -275,13 +288,21 @@ private:
 
     mutable Mutex       mLock;
 
+    /*  This indicates that the camera has been opened and some initial
+        parameters have been set from the camera.
+    */
+    bool                mReady;
+
+    // This is used to wait for mReady to become true.
+    Condition           mReadyCond;
+
     preview_stream_ops* mWin;
     int                 mPreviewWinFmt;
     int                 mPreviewWinWidth;
     int                 mPreviewWinHeight;
 
     CameraParameters    mParameters;
-    char*               mVideoDevice;
+    String8             mVideoDevice;
 
     camera_memory_t*    mRawPreviewHeap;
     int                 mRawPreviewFrameSize;
@@ -339,6 +360,8 @@ private:
      ***************************************************************************/
 
 private:
+    status_t setParametersLocked(const char* parms);
+
     static int set_preview_window(struct camera_device* dev,
                                    struct preview_stream_ops* window);
     static void set_callbacks(struct camera_device* dev,
