@@ -1675,10 +1675,9 @@ bool CameraHardware::previewThread()
     */
     //ALOGD("previewThread: this=%p",this);
 
-    /*  It is OK to poll the camera faster than the frame rate if you want
-        faster response to a request to stop the thread. 
-    */
-    nsecs_t timeout = 10 * 1000 * 1000;         // 10 millisecond polls
+    // Calculate how long to wait between frames and add 20%.
+    int     previewFrameRate = mParameters.getPreviewFrameRate();
+    nsecs_t timeout          = (1200000000 / previewFrameRate);
 
     // Buffers to send messages
     int previewBufferIdx = 0;
