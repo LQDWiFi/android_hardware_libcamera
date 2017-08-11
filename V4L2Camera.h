@@ -21,6 +21,8 @@
 
 namespace android {
 
+static const int MaxPreviewWidth = 1920;    // a hack for certain cameras
+
 struct vdIn {
     struct v4l2_capability cap;
     struct v4l2_format format;              // Capture format being used

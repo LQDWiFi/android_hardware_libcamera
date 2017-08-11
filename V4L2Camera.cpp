@@ -964,7 +964,11 @@ bool V4L2Camera::EnumFrameFormats()
         if ((s.getFps()  > m_BestPreviewFmt.getFps()) ||
             (s.getFps() == m_BestPreviewFmt.getFps() && s.getSize() > m_BestPreviewFmt.getSize() )
             ) {
-            m_BestPreviewFmt = s;
+
+            // REVISIT But limit the preview size
+            if (s.getSize().getWidth() <= MaxPreviewWidth) {
+                m_BestPreviewFmt = s;
+            }
         }
 
     }

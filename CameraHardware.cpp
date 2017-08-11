@@ -951,11 +951,9 @@ status_t CameraHardware::setParametersLocked(const char* parms)
 
     // Store the new parameters
     mParameters = params;
-// REVISIT
-mParameters.setPreviewSize(1920, 1080);
 
     // Recreate the heaps if toggling recording changes the raw preview size
-    //  and also restart the preview so we use the new size if needed
+    // and also restart the preview so we use the new size if needed
     initHeapLocked();
 
     return NO_ERROR;
