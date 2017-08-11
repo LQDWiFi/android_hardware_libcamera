@@ -29,9 +29,9 @@ extern "C" {
 
 #define HEADERFRAME1 0xaf
 
-//#define DEBUG_FRAME 0
+#define DEBUG_FRAME 0
 
-#ifdef DEBUG_FRAME
+#if DEBUG_FRAME
 #define LOG_FRAME ALOGD
 #else
 #define LOG_FRAME ALOGV
@@ -525,6 +525,8 @@ int V4L2Camera::StopStreaming ()
     return 0;
 }
 
+
+
 /* Returns the effective capture size */
 void V4L2Camera::getSize(int& width, int& height) const
 {
@@ -532,26 +534,69 @@ void V4L2Camera::getSize(int& width, int& height) const
     height = videoIn->outHeight;
 }
 
+
+
 /* Returns the effective fps */
 int V4L2Camera::getFps() const
 {
     return videoIn->params.parm.capture.timeperframe.denominator;
 }
 
+
+
+
 /* Grab frame in YUYV mode */
-void V4L2Camera::GrabRawFrame (void *frameBuffer, int maxSize)
+status_t V4L2Camera::GrabRawFrame (void *frameBuffer, int maxSize, nsecs_t timeout)
 {
-    LOG_FRAME("V4L2Camera::GrabRawFrame: frameBuffer:%p, len:%d",frameBuffer,maxSize);
+    //LOG_FRAME("V4L2Camera::GrabRawFrame: frameBuffer:%p, len:%d", frameBuffer, maxSize);
     int ret;
 
-    /* DQ */
+    /*  Wait until a frame is ready. We don't want to block forever
+        V4L2 drivers support select().
+    */
+    fd_set  readSet;
+    fd_set  writeSet;
+    fd_set  errorSet;
+    timeval tv;
+
+    FD_ZERO(&readSet);
+    FD_ZERO(&writeSet);
+    FD_ZERO(&errorSet);
+
+    FD_SET(fd, &readSet);
+    FD_SET(fd, &writeSet);
+    FD_SET(fd, &errorSet);
+
+    tv.tv_sec  = timeout / 1000000000;
+    tv.tv_usec = (timeout - tv.tv_sec * 1000000000) / 1000;
+
+    int e = ::select(fd + 1, &readSet, &writeSet, &errorSet, &tv);
+
+    if (e < 0) {
+        ALOGE("GrabRawFrame: select Failed");
+        return UNKNOWN_ERROR;
+    }
+
+    if (e == 0) {
+        ALOGE("GrabRawFrame: timed out");
+        return TIMED_OUT;
+    }
+
+    if (!FD_ISSET(fd, &readSet)) {
+        ALOGE("GrabRawFrame: read fd not set");
+        return UNKNOWN_ERROR;
+    }
+
+    // DQ 
     memset(&videoIn->buf,0,sizeof(videoIn->buf));
     videoIn->buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
     videoIn->buf.memory = V4L2_MEMORY_MMAP;
+
     ret = ioctl(fd, VIDIOC_DQBUF, &videoIn->buf);
+
     if (ret < 0) {
         ALOGE("GrabPreviewFrame: VIDIOC_DQBUF Failed");
-        return;
+        return UNKNOWN_ERROR;
     }
 
     nDequeued++;
@@ -718,14 +763,16 @@ void V4L2Camera::GrabRawFrame (void *frameBuffer, int maxSize)
     ret = ioctl(fd, VIDIOC_QBUF, &videoIn->buf);
     if (ret < 0) {
         ALOGE("GrabPreviewFrame: VIDIOC_QBUF Failed");
-        return;
+        return UNKNOWN_ERROR;
     }
 
     nQueued++;
 
     LOG_FRAME("V4L2Camera::GrabRawFrame - Queued buffer");
-
+    return NO_ERROR;
 }
+
+
 
 /* enumerate frame intervals (fps)
  * args:

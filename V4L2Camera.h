@@ -15,6 +15,7 @@
 #include <binder/MemoryHeapBase.h>
 #include <utils/SortedVector.h>
 #include <utils/String8.h>
+#include <utils/Timers.h>
 #include "uvc_compat.h"
 #include "SurfaceDesc.h"
 
@@ -56,7 +57,11 @@ public:
     int StartStreaming ();
     int StopStreaming ();
 
-    void GrabRawFrame (void *frameBuffer,int maxSize);
+    /*  @return NO_ERROR  - a frame has been copied
+                TIMED_OUT - no data is available
+                UNKNOWN_ERROR - some I/O error
+    */
+    status_t GrabRawFrame (void *frameBuffer, int maxSize, nsecs_t timeout);
 
     void getSize(int& width, int& height) const;
     int getFps() const;
