@@ -50,11 +50,11 @@ public:
     V4L2Camera();
     ~V4L2Camera();
 
-    int Open (const String8& device);
-    void Close ();
+    int  Open(const String8& device);
+    void Close();
 
-    int Init (int width, int height, int fps);
-    void Uninit ();
+    int  Init(int width, int height, int fps);
+    void Uninit(nsecs_t timeout);
 
     int StartStreaming ();
     int StopStreaming ();
@@ -77,6 +77,8 @@ private:
     bool EnumFrameIntervals(int pixfmt, int width, int height);
     bool EnumFrameSizes(int pixfmt);
     bool EnumFrameFormats();
+    status_t dequeueBuf(nsecs_t timeout);
+
     int saveYUYVtoJPEG(uint8_t* src, uint8_t* dst, int maxsize, int width, int height, int quality);
 
 private:

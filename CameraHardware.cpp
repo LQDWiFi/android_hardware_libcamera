@@ -17,6 +17,14 @@
 
 #define LOG_TAG "CameraHardware"
 
+#define DEBUG_FRAME 0
+
+#if DEBUG_FRAME
+#define LOG_FRAME ALOGD
+#else
+#define LOG_FRAME ALOGV
+#endif
+
 #include <utils/Log.h>
 #include <cutils/properties.h>
 #include <fcntl.h>
@@ -639,7 +647,7 @@ bool CameraHardware::PreviewThread::threadLoop()
 
 status_t CameraHardware::startPreviewLocked()
 {
-    ALOGD("startPreviewLocked");
+    //ALOGD("startPreviewLocked");
 
     if (!mReady) {
         ALOGD("startPreviewLocked: camera not ready");
@@ -663,14 +671,12 @@ status_t CameraHardware::startPreviewLocked()
 
     int fps = mParameters.getPreviewFrameRate();
 
-    ALOGD("startPreviewLocked: opening %s", mVideoDevice.string());
     status_t ret = camera.Open(mVideoDevice);
     if (ret != NO_ERROR) {
         ALOGE("startPreviewLocked: Failed to initialize Camera");
         return ret;
     }
 
-    ALOGD("startPreviewLocked: Init %dx%d", width, height);
     ret = camera.Init(width, height, fps);
     if (ret != NO_ERROR) {
         ALOGE("startPreviewLocked: Failed to setup streaming");
@@ -728,13 +734,13 @@ status_t CameraHardware::startPreview()
 
 void CameraHardware::stopPreviewLocked()
 {
-    ALOGD("stopPreviewLocked");
+    //ALOGD("stopPreviewLocked");
 
     if (mPreviewThread != 0) {
         mPreviewThread->requestExitAndWait();
         mPreviewThread.clear();
 
-        camera.Uninit();
+        camera.Uninit(frameTimeout());
         camera.StopStreaming();
         camera.Close();
     }
@@ -900,7 +906,7 @@ status_t CameraHardware::setParameters(const char* parms)
 
 status_t CameraHardware::setParametersLocked(const char* parms)
 {
-    ALOGD("setParametersLocked");
+    //ALOGD("setParametersLocked");
 
     CameraParameters params;
     String8 str8_param(parms);
@@ -933,7 +939,7 @@ status_t CameraHardware::setParametersLocked(const char* parms)
         return BAD_VALUE;
     }
 
-#if 1
+#if 0
     {
         // For debugging
         int w, h;
@@ -1087,7 +1093,7 @@ bool CameraHardware::tryOpenCamera(const String8& videoFile)
     // Signal that the camera is ready.
     mReadyCond.broadcast();
 
-    ALOGD("tryOpenCamera exit");
+    //ALOGD("tryOpenCamera exit");
     return ok;
 }
 
@@ -1663,7 +1669,7 @@ void CameraHardware::initHeapLocked()
         startPreviewLocked();
     }
 
-    ALOGD("initHeapLocked: OK");
+    //ALOGD("initHeapLocked: OK");
 }
 
 
@@ -1762,7 +1768,7 @@ bool CameraHardware::previewThread()
     }
 
     if (mMsgEnabled & CAMERA_MSG_PREVIEW_FRAME) {
-        ALOGD("CameraHardware::previewThread: posting preview frame...");
+        //ALOGD("CameraHardware::previewThread: posting preview frame...");
 
         // Here we could eventually have a problem: If we are recording, the recording size
         //  takes precedence over the preview size. So, the rawBase buffer could be of a
@@ -1919,7 +1925,7 @@ void CameraHardware::fillPreviewWindow(uint8_t* yuyv, int srcWidth, int srcHeigh
         bytesPerPixel = 2;
     }
 
-    ALOGD("ANativeWindow: bits:%p, stride in pixels:%d, w:%d, h: %d, format: %d",vaddr,stride,mPreviewWinWidth,mPreviewWinHeight,mPreviewWinFmt);
+    LOG_FRAME("ANativeWindow: bits:%p, stride in pixels:%d, w:%d, h: %d, format: %d",vaddr,stride,mPreviewWinWidth,mPreviewWinHeight,mPreviewWinFmt);
 
     // Based on the destination pixel type, we must convert from YUYV to it
     int dstStride = bytesPerPixel * stride;
@@ -1992,7 +1998,7 @@ void CameraHardware::fillPreviewWindow(uint8_t* yuyv, int srcWidth, int srcHeigh
 nsecs_t CameraHardware::frameTimeout()
 {
     // Calculate how long to wait between frames and add 20%.
-    int     previewFrameRate = mParameters.getPreviewFrameRate();
+    int previewFrameRate = mParameters.getPreviewFrameRate();
     return (1200000000 / previewFrameRate);
 }
 
@@ -2149,7 +2155,7 @@ int CameraHardware::pictureThread()
 
             }
 
-            camera.Uninit();
+            camera.Uninit(frameTimeout());
             camera.StopStreaming();
             camera.Close();
 

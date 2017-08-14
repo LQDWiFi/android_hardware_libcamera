@@ -455,20 +455,16 @@ int V4L2Camera::Init(int width, int height, int fps)
     return 0;
 }
 
-void V4L2Camera::Uninit ()
+void V4L2Camera::Uninit(nsecs_t timeout)
 {
+    ALOGD("Uninit");
     int ret;
-
-    memset(&videoIn->buf,0,sizeof(videoIn->buf));
-    videoIn->buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-    videoIn->buf.memory = V4L2_MEMORY_MMAP;
 
     /* Dequeue everything */
     int DQcount = nQueued - nDequeued;
 
     for (int i = 0; i < DQcount-1; i++) {
-        ret = ioctl(fd, VIDIOC_DQBUF, &videoIn->buf);
-        ALOGE_IF(ret < 0, "Uninit: VIDIOC_DQBUF Failed");
+        ret = dequeueBuf(timeout);
     }
     nQueued = 0;
     nDequeued = 0;
@@ -485,7 +481,7 @@ void V4L2Camera::Uninit ()
         free(videoIn->tmpBuffer);
     videoIn->tmpBuffer = NULL;
 
-    ALOGD("Uninit");
+    //ALOGD("Uninit done");
 }
 
 int V4L2Camera::StartStreaming ()
@@ -556,52 +552,10 @@ status_t V4L2Camera::GrabRawFrame (void *frameBuffer, int maxSize, nsecs_t timeo
     //LOG_FRAME("V4L2Camera::GrabRawFrame: frameBuffer:%p, len:%d", frameBuffer, maxSize);
     int ret;
 
-    /*  Wait until a frame is ready. We don't want to block forever
-        V4L2 drivers support select().
-    */
-    fd_set  readSet;
-    fd_set  writeSet;
-    fd_set  errorSet;
-    timeval tv;
+    ret = dequeueBuf(timeout);
 
-    FD_ZERO(&readSet);
-    FD_ZERO(&writeSet);
-    FD_ZERO(&errorSet);
-
-    FD_SET(fd, &readSet);
-    FD_SET(fd, &writeSet);
-    FD_SET(fd, &errorSet);
-
-    tv.tv_sec  = timeout / 1000000000;
-    tv.tv_usec = (timeout - tv.tv_sec * 1000000000) / 1000;
-
-    int e = ::select(fd + 1, &readSet, &writeSet, &errorSet, &tv);
-
-    if (e < 0) {
-        ALOGE("GrabRawFrame: select Failed");
-        return UNKNOWN_ERROR;
-    }
-
-    if (e == 0) {
-        ALOGE("GrabRawFrame: timed out");
-        return TIMED_OUT;
-    }
-
-    if (!FD_ISSET(fd, &readSet)) {
-        ALOGE("GrabRawFrame: read fd not set");
-        return UNKNOWN_ERROR;
-    }
-
-    // DQ 
-    memset(&videoIn->buf,0,sizeof(videoIn->buf));
-    videoIn->buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-    videoIn->buf.memory = V4L2_MEMORY_MMAP;
-
-    ret = ioctl(fd, VIDIOC_DQBUF, &videoIn->buf);
-
-    if (ret < 0) {
-        ALOGE("GrabPreviewFrame: VIDIOC_DQBUF Failed");
-        return UNKNOWN_ERROR;
+    if (ret != NO_ERROR) {
+        return ret;
     }
 
     nDequeued++;
@@ -777,6 +731,62 @@ status_t V4L2Camera::GrabRawFrame (void *frameBuffer, int maxSize, nsecs_t timeo
     return NO_ERROR;
 }
 
+
+
+status_t V4L2Camera::dequeueBuf(nsecs_t timeout)
+{
+    /*  Wait until a frame is ready. We don't want to risk blocking forever.
+        V4L2 drivers support select().
+    */
+    int ret;
+
+    fd_set  readSet;
+    fd_set  writeSet;
+    fd_set  errorSet;
+    timeval tv;
+
+    FD_ZERO(&readSet);
+    FD_ZERO(&writeSet);
+    FD_ZERO(&errorSet);
+
+    FD_SET(fd, &readSet);
+    FD_SET(fd, &writeSet);
+    FD_SET(fd, &errorSet);
+
+    tv.tv_sec  = timeout / 1000000000;
+    tv.tv_usec = (timeout - tv.tv_sec * 1000000000) / 1000;
+
+    int e = ::select(fd + 1, &readSet, &writeSet, &errorSet, &tv);
+
+    if (e < 0) {
+        ALOGE("dequeueBuf: select Failed");
+        return UNKNOWN_ERROR;
+    }
+
+    if (e == 0) {
+        ALOGW("dequeueBuf: timed out");
+        return TIMED_OUT;
+    }
+
+    if (!FD_ISSET(fd, &readSet)) {
+        ALOGE("dequeueBuf: read fd not set");
+        return UNKNOWN_ERROR;
+    }
+
+    // DQ 
+    memset(&videoIn->buf,0,sizeof(videoIn->buf));
+    videoIn->buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+    videoIn->buf.memory = V4L2_MEMORY_MMAP;
+
+    ret = ioctl(fd, VIDIOC_DQBUF, &videoIn->buf);
+
+    if (ret < 0) {
+        ALOGE("dequeueBuf: VIDIOC_DQBUF Failed");
+        return UNKNOWN_ERROR;
+    }
+
+    return NO_ERROR;
+}
 
 
 /* enumerate frame intervals (fps)
