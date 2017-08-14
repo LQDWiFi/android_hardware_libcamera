@@ -69,6 +69,7 @@ public:
     */
     bool    isReady();
 
+
     // Wait until the camera becomes ready.
     void    awaitReady();
 
@@ -189,6 +190,7 @@ private:
     bool PowerOn();
     bool PowerOff();
     bool NegotiatePreviewFormat(struct preview_stream_ops* win);
+    nsecs_t frameTimeout();
 
 public:
     /* Constructs Camera instance.
@@ -249,7 +251,7 @@ private:
 
     static const int kBufferCount = 4;
 
-    bool tryInitDefaultParameters(const String8& videoFile);
+    bool tryOpenCamera(const String8& videoFile);
     void initStaticCameraMetadata();
     void initHeapLocked();
 
@@ -265,8 +267,7 @@ private:
 
     status_t startPreviewLocked();
     void     stopPreviewLocked();
-
-    int previewThread();
+    bool     previewThread();
 
     class HotPlugThread : public Thread
     {

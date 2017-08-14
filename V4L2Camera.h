@@ -15,10 +15,13 @@
 #include <binder/MemoryHeapBase.h>
 #include <utils/SortedVector.h>
 #include <utils/String8.h>
+#include <utils/Timers.h>
 #include "uvc_compat.h"
 #include "SurfaceDesc.h"
 
 namespace android {
+
+static const int MaxPreviewWidth = 1920;    // a hack for certain cameras
 
 struct vdIn {
     struct v4l2_capability cap;
@@ -47,16 +50,20 @@ public:
     V4L2Camera();
     ~V4L2Camera();
 
-    int Open (const String8& device);
-    void Close ();
+    int  Open(const String8& device);
+    void Close();
 
-    int Init (int width, int height, int fps);
-    void Uninit ();
+    int  Init(int width, int height, int fps);
+    void Uninit(nsecs_t timeout);
 
     int StartStreaming ();
     int StopStreaming ();
 
-    void GrabRawFrame (void *frameBuffer,int maxSize);
+    /*  @return NO_ERROR  - a frame has been copied
+                TIMED_OUT - no data is available
+                UNKNOWN_ERROR - some I/O error
+    */
+    status_t GrabRawFrame (void *frameBuffer, int maxSize, nsecs_t timeout);
 
     void getSize(int& width, int& height) const;
     int getFps() const;
@@ -70,6 +77,8 @@ private:
     bool EnumFrameIntervals(int pixfmt, int width, int height);
     bool EnumFrameSizes(int pixfmt);
     bool EnumFrameFormats();
+    status_t dequeueBuf(nsecs_t timeout);
+
     int saveYUYVtoJPEG(uint8_t* src, uint8_t* dst, int maxsize, int width, int height, int quality);
 
 private:

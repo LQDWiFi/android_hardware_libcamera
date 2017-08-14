@@ -17,6 +17,14 @@
 
 #define LOG_TAG "CameraHardware"
 
+#define DEBUG_FRAME 0
+
+#if DEBUG_FRAME
+#define LOG_FRAME ALOGD
+#else
+#define LOG_FRAME ALOGV
+#endif
+
 #include <utils/Log.h>
 #include <cutils/properties.h>
 #include <fcntl.h>
@@ -29,6 +37,41 @@
 #include "CameraHardware.h"
 #include "Converter.h"
 #include "Metadata.h"
+
+/*  Concurrency:
+
+    There are three threads to consider: 
+
+    * one that Android uses to feed in commands via the
+      CameraHardware::mDeviceOps dispatch;
+
+    * the hotplug thread that waits for the camera;
+
+    * the thread that is driving the camera.
+
+    We don't want the camera thread to block forever while waiting
+    for a frame. The camera might have gone bad.
+
+    We can't be holding a mutex while waiting for a frame.  This
+    will block Android too much.
+
+    The thread system is based around calling a function e.g.
+    previewThread() periodically with a check for an exit flag
+    between calls.  So GrabRawFrame() must be polled with a time-out.
+    The camera thread don't hold a mutex on while running.  If
+    Android sends a command that changes the behaviour then the
+    camera thread must be stopped first e.g. see stopPreview().
+    This will release all buffers so that they can be reallocated.
+
+    We don't have much need for a mutex at all as long as there is
+    only one Android thread sending commands. We'll keep one just
+    in case.
+
+    The hotplug thread terminates as soon as it sees the camera.
+    The mutex allows it to communicate the ready status to the
+    Android thread.
+
+*/
 
 static bool
 isLocked(android::Mutex& mLock)
@@ -240,7 +283,7 @@ CameraHardware::~CameraHardware()
     }
 
     // Power off camera
-    PowerOff();
+    //PowerOff();
 }
 
 
@@ -363,7 +406,9 @@ void CameraHardware::HotPlugThread::onFirstRef()
 
 bool CameraHardware::HotPlugThread::threadLoop()
 {
-    auto ok = mHardware->tryInitDefaultParameters(mHardware->mVideoDevice);
+    /*  The thread will be terminated after the camera has been opened.
+    */
+    auto ok = mHardware->tryOpenCamera(mHardware->mVideoDevice);
 
     if (!ok) {
         ::usleep(1000 * 1000);
@@ -401,12 +446,11 @@ status_t CameraHardware::closeCamera()
 status_t CameraHardware::getCameraInfo(struct camera_info* info, int facing,
                                        int orientation)
 {
-    //ALOGD("getCameraInfo");
-    ALOGD("getCameraInfo locked=%d", isLocked(mLock));
+    ALOGD("getCameraInfo");
     info->facing = facing;
     info->orientation = orientation;
     info->device_version = CAMERA_DEVICE_API_VERSION_1_0;
-    info->static_camera_characteristics = mCameraMetadata;
+    info->static_camera_characteristics = mCameraMetadata;      // REVISIT not used?
 
     return NO_ERROR;
 }
@@ -453,14 +497,14 @@ void CameraHardware::setCallbacks(camera_notify_callback notify_cb,
                                   void* user)
 {
     ALOGD("setCallbacks");
-    {
-        Mutex::Autolock lock(mLock);
-        mNotifyCb = notify_cb;
-        mDataCb = data_cb;
-        mDataCbTimestamp = data_cb_timestamp;
-        mRequestMemory = get_memory;
-        mCallbackCookie = user;
-    }
+
+    Mutex::Autolock lock(mLock);
+
+    mNotifyCb = notify_cb;
+    mDataCb = data_cb;
+    mDataCbTimestamp = data_cb_timestamp;
+    mRequestMemory = get_memory;
+    mCallbackCookie = user;
 }
 
 
@@ -468,20 +512,20 @@ void CameraHardware::setCallbacks(camera_notify_callback notify_cb,
 void CameraHardware::enableMsgType(int32_t msgType)
 {
     ALOGD("enableMsgType: 0x%x", msgType);
-    {
-        Mutex::Autolock lock(mLock);
-        int32_t old = mMsgEnabled;
-        mMsgEnabled |= msgType;
 
-        // If something changed related to the starting or stopping of
-        //  the recording process...
-        if ((msgType & CAMERA_MSG_VIDEO_FRAME) &&
-                (mMsgEnabled ^ old) & CAMERA_MSG_VIDEO_FRAME && mRecordingEnabled) {
+    Mutex::Autolock lock(mLock);
 
-            // Recreate the heaps if toggling recording changes the raw preview size
-            //  and also restart the preview so we use the new size if needed
-            initHeapLocked();
-        }
+    int32_t old = mMsgEnabled;
+    mMsgEnabled |= msgType;
+
+    // If something changed related to the starting or stopping of
+    //  the recording process...
+    if ((msgType & CAMERA_MSG_VIDEO_FRAME) &&
+            (mMsgEnabled ^ old) & CAMERA_MSG_VIDEO_FRAME && mRecordingEnabled) {
+
+        // Recreate the heaps if toggling recording changes the raw preview size
+        //  and also restart the preview so we use the new size if needed
+        initHeapLocked();
     }
 }
 
@@ -490,20 +534,20 @@ void CameraHardware::enableMsgType(int32_t msgType)
 void CameraHardware::disableMsgType(int32_t msgType)
 {
     ALOGD("disableMsgType: %d", msgType);
-    {
-        Mutex::Autolock lock(mLock);
-        int32_t old = mMsgEnabled;
-        mMsgEnabled &= ~msgType;
 
-        // If something changed related to the starting or stopping of
-        //  the recording process...
-        if ((msgType & CAMERA_MSG_VIDEO_FRAME) &&
-                (mMsgEnabled ^ old) & CAMERA_MSG_VIDEO_FRAME && mRecordingEnabled) {
+    Mutex::Autolock lock(mLock);
 
-            // Recreate the heaps if toggling recording changes the raw preview size
-            //  and also restart the preview so we use the new size if needed
-            initHeapLocked();
-        }
+    int32_t old = mMsgEnabled;
+    mMsgEnabled &= ~msgType;
+
+    // If something changed related to the starting or stopping of
+    //  the recording process...
+    if ((msgType & CAMERA_MSG_VIDEO_FRAME) &&
+            (mMsgEnabled ^ old) & CAMERA_MSG_VIDEO_FRAME && mRecordingEnabled) {
+
+        // Recreate the heaps if toggling recording changes the raw preview size
+        //  and also restart the preview so we use the new size if needed
+        initHeapLocked();
     }
 }
 
@@ -548,7 +592,6 @@ CameraHardware::awaitReady()
         }
 
         mReadyCond.wait(mLock);
-
     }
 }
 
@@ -583,14 +626,13 @@ CameraHardware::PreviewThread::PreviewThread(CameraHardware* hw) :
         Thread(false),
         mHardware(hw)
 {
-    ALOGD("PreviewThread: constructed, locked=%d", isLocked(mHardware->mLock));
+    //ALOGD("PreviewThread: constructed");
 }
 
 
 
 void CameraHardware::PreviewThread::onFirstRef()
 {
-    ALOGD("PreviewThread: onFirstRef, locked=%d", isLocked(mHardware->mLock));
     run("CameraPreviewThread", PRIORITY_URGENT_DISPLAY);
 }
 
@@ -598,17 +640,14 @@ void CameraHardware::PreviewThread::onFirstRef()
 
 bool CameraHardware::PreviewThread::threadLoop()
 {
-    ALOGD("PreviewThread: threadLoop, locked=%d", isLocked(mHardware->mLock));
-    mHardware->previewThread();
-    // loop until we need to quit
-    return true;
+    return mHardware->previewThread();
 }
 
 
 
 status_t CameraHardware::startPreviewLocked()
 {
-    ALOGD("startPreviewLocked");
+    //ALOGD("startPreviewLocked");
 
     if (!mReady) {
         ALOGD("startPreviewLocked: camera not ready");
@@ -632,14 +671,12 @@ status_t CameraHardware::startPreviewLocked()
 
     int fps = mParameters.getPreviewFrameRate();
 
-    ALOGD("startPreviewLocked: opening %s", mVideoDevice.string());
     status_t ret = camera.Open(mVideoDevice);
     if (ret != NO_ERROR) {
         ALOGE("startPreviewLocked: Failed to initialize Camera");
         return ret;
     }
 
-    ALOGD("startPreviewLocked: Init %dx%d", width, height);
     ret = camera.Init(width, height, fps);
     if (ret != NO_ERROR) {
         ALOGE("startPreviewLocked: Failed to setup streaming");
@@ -688,28 +725,22 @@ status_t CameraHardware::startPreviewLocked()
 status_t CameraHardware::startPreview()
 {
     ALOGD("startPreview");
-    bool ok;
 
-    {
-        Mutex::Autolock lock(mLock);
-        ok = startPreviewLocked();
-    }
-
-    ALOGD("startPreview exit, lock=%d", isLocked(mLock));
-    return ok;
+    Mutex::Autolock lock(mLock);
+    return startPreviewLocked();
 }
 
 
 
 void CameraHardware::stopPreviewLocked()
 {
-    ALOGD("stopPreviewLocked");
+    //ALOGD("stopPreviewLocked");
 
     if (mPreviewThread != 0) {
         mPreviewThread->requestExitAndWait();
         mPreviewThread.clear();
 
-        camera.Uninit();
+        camera.Uninit(frameTimeout());
         camera.StopStreaming();
         camera.Close();
     }
@@ -757,21 +788,22 @@ status_t CameraHardware::storeMetaDataInBuffers(int value)
 status_t CameraHardware::startRecording()
 {
     ALOGD("startRecording");
-    {
-        Mutex::Autolock lock(mLock);
-        if (!mRecordingEnabled) {
-            mRecordingEnabled = true;
 
-            // If something changed related to the starting or stopping of
-            //  the recording process...
-            if (mMsgEnabled & CAMERA_MSG_VIDEO_FRAME) {
+    Mutex::Autolock lock(mLock);
 
-                // Recreate the heaps if toggling recording changes the raw preview size
-                //  and also restart the preview so we use the new size if needed
-                initHeapLocked();
-            }
+    if (!mRecordingEnabled) {
+        mRecordingEnabled = true;
+
+        // If something changed related to the starting or stopping of
+        //  the recording process...
+        if (mMsgEnabled & CAMERA_MSG_VIDEO_FRAME) {
+
+            // Recreate the heaps if toggling recording changes the raw preview size
+            //  and also restart the preview so we use the new size if needed
+            initHeapLocked();
         }
     }
+
     return NO_ERROR;
 }
 
@@ -780,19 +812,19 @@ status_t CameraHardware::startRecording()
 void CameraHardware::stopRecording()
 {
     ALOGD("stopRecording");
-    {
-        Mutex::Autolock lock(mLock);
-        if (mRecordingEnabled) {
-            mRecordingEnabled = false;
 
-            // If something changed related to the starting or stopping of
-            //  the recording process...
-            if (mMsgEnabled & CAMERA_MSG_VIDEO_FRAME) {
+    Mutex::Autolock lock(mLock);
 
-                // Recreate the heaps if toggling recording changes the raw preview size
-                //  and also restart the preview so we use the new size if needed
-                initHeapLocked();
-            }
+    if (mRecordingEnabled) {
+        mRecordingEnabled = false;
+
+        // If something changed related to the starting or stopping of
+        //  the recording process...
+        if (mMsgEnabled & CAMERA_MSG_VIDEO_FRAME) {
+
+            // Recreate the heaps if toggling recording changes the raw preview size
+            //  and also restart the preview so we use the new size if needed
+            initHeapLocked();
         }
     }
 }
@@ -824,8 +856,10 @@ status_t CameraHardware::setAutoFocus()
 {
     ALOGD("setAutoFocus");
     Mutex::Autolock lock(mLock);
+
     if (createThread(beginAutoFocusThread, this) == false)
         return UNKNOWN_ERROR;
+
     return NO_ERROR;
 }
 
@@ -842,6 +876,8 @@ status_t CameraHardware::cancelAutoFocus()
 status_t CameraHardware::takePicture()
 {
     ALOGD("takePicture");
+    Mutex::Autolock lock(mLock);
+
     if (createThread(beginPictureThread, this) == false)
         return UNKNOWN_ERROR;
 
@@ -870,7 +906,7 @@ status_t CameraHardware::setParameters(const char* parms)
 
 status_t CameraHardware::setParametersLocked(const char* parms)
 {
-    ALOGD("setParametersLocked");
+    //ALOGD("setParametersLocked");
 
     CameraParameters params;
     String8 str8_param(parms);
@@ -903,7 +939,7 @@ status_t CameraHardware::setParametersLocked(const char* parms)
         return BAD_VALUE;
     }
 
-#if 1
+#if 0
     {
         // For debugging
         int w, h;
@@ -925,11 +961,9 @@ status_t CameraHardware::setParametersLocked(const char* parms)
 
     // Store the new parameters
     mParameters = params;
-// REVISIT
-mParameters.setPreviewSize(1920, 1080);
 
     // Recreate the heaps if toggling recording changes the raw preview size
-    //  and also restart the preview so we use the new size if needed
+    // and also restart the preview so we use the new size if needed
     initHeapLocked();
 
     return NO_ERROR;
@@ -943,7 +977,7 @@ static char lNoParam = '\0';
 
 char* CameraHardware::getParameters()
 {
-    ALOGD("getParameters, locked=%d", isLocked(mLock));
+    ALOGD("getParameters");
 
     String8 params;
     {
@@ -951,7 +985,6 @@ char* CameraHardware::getParameters()
         params = mParameters.flatten();
     }
 
-    ALOGD("getParameters, got em");
     if (!params.isEmpty()) {
         char* ret_str = reinterpret_cast<char*>(malloc(sizeof(char) * (params.length()+1)));
         memset(ret_str, 0, params.length()+1);
@@ -1013,7 +1046,7 @@ status_t CameraHardware::dumpCamera(int fd)
 // ---------------------------------------------------------------------------
 
 
-bool CameraHardware::tryInitDefaultParameters(const String8& videoFile)
+bool CameraHardware::tryOpenCamera(const String8& videoFile)
 {
     /*  This will be called from the hotplug thread to try to
         open the video file.  It may take a long time for the camera to
@@ -1023,8 +1056,7 @@ bool CameraHardware::tryInitDefaultParameters(const String8& videoFile)
     */
     FromCamera fc;
 
-    ALOGD("tryInitDefaultParameters");
-    Mutex::Autolock lock(mLock);
+    ALOGD("tryOpenCamera");
 
     if (camera.Open(videoFile) != NO_ERROR) {
         ALOGI("did not open %s", videoFile.string());
@@ -1048,16 +1080,20 @@ bool CameraHardware::tryInitDefaultParameters(const String8& videoFile)
     // Get all the available Fps
     fc.avFps = camera.getAvailableFps();
 
+    Mutex::Autolock lock(mLock);
+
     // Allow the preview thread to start
     mReady = true;
 
-    // This will call setParametersLocked().
+    /*  This will call setParametersLocked() which will
+        start the preview thread.
+    */
     auto ok = fc.set(*this);
 
     // Signal that the camera is ready.
     mReadyCond.broadcast();
 
-    ALOGD("tryInitDefaultParameters exit");
+    //ALOGD("tryOpenCamera exit");
     return ok;
 }
 
@@ -1633,206 +1669,175 @@ void CameraHardware::initHeapLocked()
         startPreviewLocked();
     }
 
-    ALOGD("initHeapLocked: OK");
+    //ALOGD("initHeapLocked: OK");
 }
 
 
 
-int CameraHardware::previewThread()
+bool CameraHardware::previewThread()
 {
-    ALOGV("previewThread: this=%p",this);
+    /*  We return true to continue the thread. 
 
-    int previewFrameRate = mParameters.getPreviewFrameRate();
-
-    // Calculate how long to wait between frames.
-    int delay = (int)(1000000 / previewFrameRate);
+	We don't hold the mutex while doing this. The other threads
+	are expected to stop this thread before changing anything.
+    */
+    //ALOGD("previewThread: this=%p",this);
 
     // Buffers to send messages
-    int recBufferIdx = 0;
     int previewBufferIdx = 0;
 
-    bool record = false;
-    bool preview = false;
+    // If no raw preview buffer, we can't do anything...
+    if (mRawPreviewBuffer == 0) {
+        ALOGE("No Raw preview buffer!");
+        return false;
+    }
 
-    // Get the current timestamp
-    nsecs_t timestamp = systemTime(SYSTEM_TIME_MONOTONIC);
+    // Get the preview buffer for the current frame
+    // This is always valid, even if the client died -- the memory
+    // is still mapped in our process.
+    uint8_t *frame = (uint8_t *)mPreviewBuffer[mCurrentPreviewFrame];
 
-    // We must avoid a race condition here when destroying the thread...
-    //  So, if we fail to lock the mutex, just retry a bit later, but
-    //  let the android thread end if requested!
-    if (mLock.tryLock() == NO_ERROR) {
+    // If no preview buffer, we cant do anything...
+    if (frame == 0) {
+        ALOGE("No preview buffer!");
+        return false;
+    }
 
-        // If no raw preview buffer, we can't do anything...
-        if (mRawPreviewBuffer == 0) {
-            ALOGE("No Raw preview buffer!");
-            mLock.unlock();
-            return NO_ERROR;
-        }
+    //  Get a pointer to the memory area to use... In case of previewing in YUV422I, we
+    // can save a buffer copy by directly using the output buffer. But ONLY if NOT recording
+    // or, in case of recording, when size matches
+    uint8_t* rawBase = (mPreviewFmt == PIXEL_FORMAT_YCrCb_422_I &&
+                        (!mRecordingEnabled || mRawPreviewFrameSize == mPreviewFrameSize))
+                        ? frame : (uint8_t*)mRawPreviewBuffer;
 
-        // Get the preview buffer for the current frame
-        // This is always valid, even if the client died -- the memory
-        // is still mapped in our process.
-        uint8_t *frame = (uint8_t *)mPreviewBuffer[mCurrentPreviewFrame];
+    // Grab a frame in the raw format YUYV
+    auto status = camera.GrabRawFrame(rawBase, mRawPreviewFrameSize, frameTimeout());
 
-        // If no preview buffer, we cant do anything...
-        if (frame == 0) {
-            ALOGE("No preview buffer!");
-            mLock.unlock();
-            return NO_ERROR;
-        }
+    if (status == TIMED_OUT) {
+        return true;
+    }
 
+    if (status != NO_ERROR) {
+        // Give up
+        ALOGE("The camera has failed");
+        return false;
+    }
 
-        //  Get a pointer to the memory area to use... In case of previewing in YUV422I, we
-        // can save a buffer copy by directly using the output buffer. But ONLY if NOT recording
-        // or, in case of recording, when size matches
-        uint8_t* rawBase = (mPreviewFmt == PIXEL_FORMAT_YCrCb_422_I &&
-                            (!mRecordingEnabled || mRawPreviewFrameSize == mPreviewFrameSize))
-                            ? frame : (uint8_t*)mRawPreviewBuffer;
+    // If the recording is enabled...
+    if (mRecordingEnabled && mMsgEnabled & CAMERA_MSG_VIDEO_FRAME) {
+        //ALOGD("CameraHardware::previewThread: posting video frame...");
 
-        // Grab a frame in the raw format YUYV
-        camera.GrabRawFrame(rawBase, mRawPreviewFrameSize);
+        // Get the video size. We are warrantied here that the current capture
+        // size IS exacty equal to the video size, as this condition is enforced
+        // by this driver, that priorizes recording size over preview size requirements
 
-        // If the recording is enabled...
-        if (mRecordingEnabled && mMsgEnabled & CAMERA_MSG_VIDEO_FRAME) {
-            //ALOGD("CameraHardware::previewThread: posting video frame...");
+        uint8_t *recFrame = (uint8_t *) mRecBuffers[mCurrentRecordingFrame];
+        if (recFrame != 0) {
 
-            // Get the video size. We are warrantied here that the current capture
-            // size IS exacty equal to the video size, as this condition is enforced
-            // by this driver, that priorizes recording size over preview size requirements
+            // Convert from our raw frame to the one the Record requires
+            switch (mRecFmt) {
 
-            uint8_t *recFrame = (uint8_t *) mRecBuffers[mCurrentRecordingFrame];
-            if (recFrame != 0) {
-
-                // Convert from our raw frame to the one the Record requires
-                switch (mRecFmt) {
-
-                // Note: Apparently, Android's "YCbCr_422_SP" is merely an arbitrary label
-                // The preview data comes in a YUV 4:2:0 format, with Y plane, then VU plane
-                case PIXEL_FORMAT_YCbCr_422_SP:
-                    yuyv_to_yvu420sp(recFrame, mRawPreviewWidth, mRawPreviewHeight, rawBase, (mRawPreviewWidth<<1), mRawPreviewWidth, mRawPreviewHeight);
-                    break;
-
-                case PIXEL_FORMAT_YCbCr_420_SP:
-                    yuyv_to_yvu420sp(recFrame, mRawPreviewWidth, mRawPreviewHeight, rawBase, (mRawPreviewWidth<<1), mRawPreviewWidth, mRawPreviewHeight);
-                    break;
-
-                case PIXEL_FORMAT_YV12:
-                    /* OMX recorder needs YUV */
-                    yuyv_to_yuv420p(recFrame, mRawPreviewWidth, mRawPreviewHeight, rawBase, (mRawPreviewWidth<<1), mRawPreviewWidth, mRawPreviewHeight);
-                    break;
-
-                case PIXEL_FORMAT_YCrCb_422_I:
-                    memcpy(recFrame, rawBase, mRecordingFrameSize);
-                    break;
-                }
-
-                // Remember we must schedule the callback
-                record = true;
-
-                // Advance the buffer pointer.
-                recBufferIdx = mCurrentRecordingFrame;
-                mCurrentRecordingFrame = (mCurrentRecordingFrame + 1) % kBufferCount;
-            }
-        }
-
-        if (mMsgEnabled & CAMERA_MSG_PREVIEW_FRAME) {
-            ALOGD("CameraHardware::previewThread: posting preview frame...");
-
-            // Here we could eventually have a problem: If we are recording, the recording size
-            //  takes precedence over the preview size. So, the rawBase buffer could be of a
-            //  different size than the preview buffer. Handle this situation by centering/cropping
-            //  if needed.
-
-            // Get the preview size
-            int width = 0, height = 0;
-            mParameters.getPreviewSize(&width,&height);
-
-            // Assume we will be able to copy at least those pixels
-            int cwidth = width;
-            int cheight = height;
-
-            // If we are trying to display a preview larger than the effective capture, truncate to it
-            if (cwidth > mRawPreviewWidth)
-                cwidth = mRawPreviewWidth;
-            if (cheight > mRawPreviewHeight)
-                cheight = mRawPreviewHeight;
-
-            // Convert from our raw frame to the one the Preview requires
-            switch (mPreviewFmt) {
-
-                // Note: Apparently, Android's "YCbCr_422_SP" is merely an arbitrary label
-                // The preview data comes in a YUV 4:2:0 format, with Y plane, then VU plane
-            case PIXEL_FORMAT_YCbCr_422_SP: // This is misused by android...
-                yuyv_to_yvu420sp(frame, width, height, rawBase, (mRawPreviewWidth<<1), cwidth, cheight);
+            // Note: Apparently, Android's "YCbCr_422_SP" is merely an arbitrary label
+            // The preview data comes in a YUV 4:2:0 format, with Y plane, then VU plane
+            case PIXEL_FORMAT_YCbCr_422_SP:
+                yuyv_to_yvu420sp(recFrame, mRawPreviewWidth, mRawPreviewHeight, rawBase, (mRawPreviewWidth<<1), mRawPreviewWidth, mRawPreviewHeight);
                 break;
 
             case PIXEL_FORMAT_YCbCr_420_SP:
-                yuyv_to_yvu420sp(frame, width, height, rawBase, (mRawPreviewWidth<<1), cwidth, cheight);
+                yuyv_to_yvu420sp(recFrame, mRawPreviewWidth, mRawPreviewHeight, rawBase, (mRawPreviewWidth<<1), mRawPreviewWidth, mRawPreviewHeight);
                 break;
 
             case PIXEL_FORMAT_YV12:
-                yuyv_to_yvu420p(frame, width, height, rawBase, (mRawPreviewWidth<<1), cwidth, cheight);
+                /* OMX recorder needs YUV */
+                yuyv_to_yuv420p(recFrame, mRawPreviewWidth, mRawPreviewHeight, rawBase, (mRawPreviewWidth<<1), mRawPreviewWidth, mRawPreviewHeight);
                 break;
 
             case PIXEL_FORMAT_YCrCb_422_I:
-                // Nothing to do here. Is is handled as a special case without buffer copies...
-                //  but ONLY in special cases... Otherwise, handle the copy!
-                if (mRecordingEnabled && mRawPreviewFrameSize != mPreviewFrameSize) {
-                    // We need to copy ... do it
-                    uint8_t* dst = frame;
-                    uint8_t* src = rawBase;
-                    int h;
-                    for (h = 0; h < cheight; h++) {
-                        memcpy(dst,src,cwidth<<1);
-                        dst += width << 1;
-                        src += mRawPreviewWidth<<1;
-                    }
-                }
+                memcpy(recFrame, rawBase, mRecordingFrameSize);
                 break;
-
-            default:
-                ALOGE("Unhandled pixel format");
-
             }
 
-            // Remember we must schedule the callback
-            preview = true;
-
             // Advance the buffer pointer.
-            previewBufferIdx = mCurrentPreviewFrame;
-            mCurrentPreviewFrame = (mCurrentPreviewFrame + 1) % kBufferCount;
+            auto recBufferIdx = mCurrentRecordingFrame;
+            mCurrentRecordingFrame = (mCurrentRecordingFrame + 1) % kBufferCount;
+
+            // Record callback uses a timestamped frame
+            nsecs_t timestamp = systemTime(SYSTEM_TIME_MONOTONIC);
+            mDataCbTimestamp(timestamp, CAMERA_MSG_VIDEO_FRAME, mRecordingHeap, recBufferIdx, mCallbackCookie);
         }
-
-        // Display the preview image
-        fillPreviewWindow(rawBase, mRawPreviewWidth, mRawPreviewHeight);
-
-        // Release the lock
-        mLock.unlock();
-
-    } else {
-
-        // Delay a little ... and reattempt the lock on the next iteration
-        delay >>= 7;
-        usleep(delay);
     }
 
-    // We must schedule the callbacks Outside the lock, or the caller
-    //  could call us and cause a deadlock!
-    if (preview) {
+    if (mMsgEnabled & CAMERA_MSG_PREVIEW_FRAME) {
+        //ALOGD("CameraHardware::previewThread: posting preview frame...");
+
+        // Here we could eventually have a problem: If we are recording, the recording size
+        //  takes precedence over the preview size. So, the rawBase buffer could be of a
+        //  different size than the preview buffer. Handle this situation by centering/cropping
+        //  if needed.
+
+        // Get the preview size
+        int width = 0, height = 0;
+        mParameters.getPreviewSize(&width,&height);
+
+        // Assume we will be able to copy at least those pixels
+        int cwidth = width;
+        int cheight = height;
+
+        // If we are trying to display a preview larger than the effective capture, truncate to it
+        if (cwidth > mRawPreviewWidth)
+            cwidth = mRawPreviewWidth;
+        if (cheight > mRawPreviewHeight)
+            cheight = mRawPreviewHeight;
+
+        // Convert from our raw frame to the one the Preview requires
+        switch (mPreviewFmt) {
+
+            // Note: Apparently, Android's "YCbCr_422_SP" is merely an arbitrary label
+            // The preview data comes in a YUV 4:2:0 format, with Y plane, then VU plane
+        case PIXEL_FORMAT_YCbCr_422_SP: // This is misused by android...
+            yuyv_to_yvu420sp(frame, width, height, rawBase, (mRawPreviewWidth<<1), cwidth, cheight);
+            break;
+
+        case PIXEL_FORMAT_YCbCr_420_SP:
+            yuyv_to_yvu420sp(frame, width, height, rawBase, (mRawPreviewWidth<<1), cwidth, cheight);
+            break;
+
+        case PIXEL_FORMAT_YV12:
+            yuyv_to_yvu420p(frame, width, height, rawBase, (mRawPreviewWidth<<1), cwidth, cheight);
+            break;
+
+        case PIXEL_FORMAT_YCrCb_422_I:
+            // Nothing to do here. Is is handled as a special case without buffer copies...
+            //  but ONLY in special cases... Otherwise, handle the copy!
+            if (mRecordingEnabled && mRawPreviewFrameSize != mPreviewFrameSize) {
+                // We need to copy ... do it
+                uint8_t* dst = frame;
+                uint8_t* src = rawBase;
+                int h;
+                for (h = 0; h < cheight; h++) {
+                    memcpy(dst,src,cwidth<<1);
+                    dst += width << 1;
+                    src += mRawPreviewWidth<<1;
+                }
+            }
+            break;
+
+        default:
+            ALOGE("Unhandled pixel format");
+
+        }
+
+        // Advance the buffer pointer.
+        auto previewBufferIdx = mCurrentPreviewFrame;
+        mCurrentPreviewFrame = (mCurrentPreviewFrame + 1) % kBufferCount;
+
         mDataCb(CAMERA_MSG_PREVIEW_FRAME, mPreviewHeap, previewBufferIdx, NULL, mCallbackCookie);
     }
 
-    if (record) {
-        // Record callback uses a timestamped frame
-        mDataCbTimestamp(timestamp, CAMERA_MSG_VIDEO_FRAME, mRecordingHeap, recBufferIdx, mCallbackCookie);
-    }
+    // Display the preview image
+    fillPreviewWindow(rawBase, mRawPreviewWidth, mRawPreviewHeight);
 
-    ALOGV("previewThread OK");
-
-    // Wait for it...
-    //usleep(delay);
-
-    return NO_ERROR;
+    return true;
 }
 
 
@@ -1920,7 +1925,7 @@ void CameraHardware::fillPreviewWindow(uint8_t* yuyv, int srcWidth, int srcHeigh
         bytesPerPixel = 2;
     }
 
-    ALOGV("ANativeWindow: bits:%p, stride in pixels:%d, w:%d, h: %d, format: %d",vaddr,stride,mPreviewWinWidth,mPreviewWinHeight,mPreviewWinFmt);
+    LOG_FRAME("ANativeWindow: bits:%p, stride in pixels:%d, w:%d, h: %d, format: %d",vaddr,stride,mPreviewWinWidth,mPreviewWinHeight,mPreviewWinFmt);
 
     // Based on the destination pixel type, we must convert from YUYV to it
     int dstStride = bytesPerPixel * stride;
@@ -1986,6 +1991,15 @@ void CameraHardware::fillPreviewWindow(uint8_t* yuyv, int srcWidth, int srcHeigh
 
     // Post the filled buffer!
     grbuffer_mapper.unlock(*buf);
+}
+
+
+
+nsecs_t CameraHardware::frameTimeout()
+{
+    // Calculate how long to wait between frames and add 20%.
+    int previewFrameRate = mParameters.getPreviewFrameRate();
+    return (1200000000 / previewFrameRate);
 }
 
 
@@ -2073,7 +2087,7 @@ int CameraHardware::pictureThread()
                 uint8_t* ptr = (uint8_t *)mRawBuffer;
 
                 // Get the image
-                camera.GrabRawFrame(ptr, (w * h << 1)); // Always YUYV
+                camera.GrabRawFrame(ptr, (w * h << 1), frameTimeout()); // Always YUYV
 
                 // luminance metering points
                 int luminance = 0;
@@ -2141,7 +2155,7 @@ int CameraHardware::pictureThread()
 
             }
 
-            camera.Uninit();
+            camera.Uninit(frameTimeout());
             camera.StopStreaming();
             camera.Close();
 

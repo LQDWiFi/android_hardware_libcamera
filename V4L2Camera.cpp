@@ -29,9 +29,9 @@ extern "C" {
 
 #define HEADERFRAME1 0xaf
 
-//#define DEBUG_FRAME 0
+#define DEBUG_FRAME 0
 
-#ifdef DEBUG_FRAME
+#if DEBUG_FRAME
 #define LOG_FRAME ALOGD
 #else
 #define LOG_FRAME ALOGV
@@ -84,6 +84,7 @@ int V4L2Camera::Open (const String8& device)
     /* Enumerate all available frame formats */
     EnumFrameFormats();
 
+    ALOGD("Opened");
     return ret;
 }
 
@@ -98,6 +99,7 @@ void V4L2Camera::Close ()
     if (fd > 0)
         close(fd);
     fd = -1;
+    ALOGD("Closed");
 }
 
 static int my_abs(int x)
@@ -107,7 +109,7 @@ static int my_abs(int x)
 
 int V4L2Camera::Init(int width, int height, int fps)
 {
-    ALOGD("V4L2Camera::Init(%d, %d, %d)", width, height, fps);
+    ALOGD("Init %d x %d, %d fps", width, height, fps);
 
     /* Initialize the capture to the specified width and height */
     static const struct {
@@ -453,20 +455,16 @@ int V4L2Camera::Init(int width, int height, int fps)
     return 0;
 }
 
-void V4L2Camera::Uninit ()
+void V4L2Camera::Uninit(nsecs_t timeout)
 {
+    ALOGD("Uninit");
     int ret;
-
-    memset(&videoIn->buf,0,sizeof(videoIn->buf));
-    videoIn->buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-    videoIn->buf.memory = V4L2_MEMORY_MMAP;
 
     /* Dequeue everything */
     int DQcount = nQueued - nDequeued;
 
     for (int i = 0; i < DQcount-1; i++) {
-        ret = ioctl(fd, VIDIOC_DQBUF, &videoIn->buf);
-        ALOGE_IF(ret < 0, "Uninit: VIDIOC_DQBUF Failed");
+        ret = dequeueBuf(timeout);
     }
     nQueued = 0;
     nDequeued = 0;
@@ -483,10 +481,12 @@ void V4L2Camera::Uninit ()
         free(videoIn->tmpBuffer);
     videoIn->tmpBuffer = NULL;
 
+    //ALOGD("Uninit done");
 }
 
 int V4L2Camera::StartStreaming ()
 {
+    ALOGD("StartStreaming");
     enum v4l2_buf_type type;
     int ret;
 
@@ -507,6 +507,7 @@ int V4L2Camera::StartStreaming ()
 
 int V4L2Camera::StopStreaming ()
 {
+    ALOGD("StopStreaming");
     enum v4l2_buf_type type;
     int ret;
 
@@ -525,6 +526,8 @@ int V4L2Camera::StopStreaming ()
     return 0;
 }
 
+
+
 /* Returns the effective capture size */
 void V4L2Camera::getSize(int& width, int& height) const
 {
@@ -532,26 +535,27 @@ void V4L2Camera::getSize(int& width, int& height) const
     height = videoIn->outHeight;
 }
 
+
+
 /* Returns the effective fps */
 int V4L2Camera::getFps() const
 {
     return videoIn->params.parm.capture.timeperframe.denominator;
 }
 
+
+
+
 /* Grab frame in YUYV mode */
-void V4L2Camera::GrabRawFrame (void *frameBuffer, int maxSize)
+status_t V4L2Camera::GrabRawFrame (void *frameBuffer, int maxSize, nsecs_t timeout)
 {
-    LOG_FRAME("V4L2Camera::GrabRawFrame: frameBuffer:%p, len:%d",frameBuffer,maxSize);
+    //LOG_FRAME("V4L2Camera::GrabRawFrame: frameBuffer:%p, len:%d", frameBuffer, maxSize);
     int ret;
 
-    /* DQ */
-    memset(&videoIn->buf,0,sizeof(videoIn->buf));
-    videoIn->buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-    videoIn->buf.memory = V4L2_MEMORY_MMAP;
-    ret = ioctl(fd, VIDIOC_DQBUF, &videoIn->buf);
-    if (ret < 0) {
-        ALOGE("GrabPreviewFrame: VIDIOC_DQBUF Failed");
-        return;
+    ret = dequeueBuf(timeout);
+
+    if (ret != NO_ERROR) {
+        return ret;
     }
 
     nDequeued++;
@@ -718,14 +722,72 @@ void V4L2Camera::GrabRawFrame (void *frameBuffer, int maxSize)
     ret = ioctl(fd, VIDIOC_QBUF, &videoIn->buf);
     if (ret < 0) {
         ALOGE("GrabPreviewFrame: VIDIOC_QBUF Failed");
-        return;
+        return UNKNOWN_ERROR;
     }
 
     nQueued++;
 
     LOG_FRAME("V4L2Camera::GrabRawFrame - Queued buffer");
-
+    return NO_ERROR;
 }
+
+
+
+status_t V4L2Camera::dequeueBuf(nsecs_t timeout)
+{
+    /*  Wait until a frame is ready. We don't want to risk blocking forever.
+        V4L2 drivers support select().
+    */
+    int ret;
+
+    fd_set  readSet;
+    fd_set  writeSet;
+    fd_set  errorSet;
+    timeval tv;
+
+    FD_ZERO(&readSet);
+    FD_ZERO(&writeSet);
+    FD_ZERO(&errorSet);
+
+    FD_SET(fd, &readSet);
+    FD_SET(fd, &writeSet);
+    FD_SET(fd, &errorSet);
+
+    tv.tv_sec  = timeout / 1000000000;
+    tv.tv_usec = (timeout - tv.tv_sec * 1000000000) / 1000;
+
+    int e = ::select(fd + 1, &readSet, &writeSet, &errorSet, &tv);
+
+    if (e < 0) {
+        ALOGE("dequeueBuf: select Failed");
+        return UNKNOWN_ERROR;
+    }
+
+    if (e == 0) {
+        ALOGW("dequeueBuf: timed out");
+        return TIMED_OUT;
+    }
+
+    if (!FD_ISSET(fd, &readSet)) {
+        ALOGE("dequeueBuf: read fd not set");
+        return UNKNOWN_ERROR;
+    }
+
+    // DQ 
+    memset(&videoIn->buf,0,sizeof(videoIn->buf));
+    videoIn->buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+    videoIn->buf.memory = V4L2_MEMORY_MMAP;
+
+    ret = ioctl(fd, VIDIOC_DQBUF, &videoIn->buf);
+
+    if (ret < 0) {
+        ALOGE("dequeueBuf: VIDIOC_DQBUF Failed");
+        return UNKNOWN_ERROR;
+    }
+
+    return NO_ERROR;
+}
+
 
 /* enumerate frame intervals (fps)
  * args:
@@ -917,7 +979,11 @@ bool V4L2Camera::EnumFrameFormats()
         if ((s.getFps()  > m_BestPreviewFmt.getFps()) ||
             (s.getFps() == m_BestPreviewFmt.getFps() && s.getSize() > m_BestPreviewFmt.getSize() )
             ) {
-            m_BestPreviewFmt = s;
+
+            // REVISIT But limit the preview size
+            if (s.getSize().getWidth() <= MaxPreviewWidth) {
+                m_BestPreviewFmt = s;
+            }
         }
 
     }
