@@ -84,6 +84,7 @@ int V4L2Camera::Open (const String8& device)
     /* Enumerate all available frame formats */
     EnumFrameFormats();
 
+    ALOGD("Opened");
     return ret;
 }
 
@@ -98,6 +99,7 @@ void V4L2Camera::Close ()
     if (fd > 0)
         close(fd);
     fd = -1;
+    ALOGD("Closed");
 }
 
 static int my_abs(int x)
@@ -107,7 +109,7 @@ static int my_abs(int x)
 
 int V4L2Camera::Init(int width, int height, int fps)
 {
-    ALOGD("V4L2Camera::Init(%d, %d, %d)", width, height, fps);
+    ALOGD("Init %d x %d, %d fps", width, height, fps);
 
     /* Initialize the capture to the specified width and height */
     static const struct {
@@ -483,10 +485,12 @@ void V4L2Camera::Uninit ()
         free(videoIn->tmpBuffer);
     videoIn->tmpBuffer = NULL;
 
+    ALOGD("Uninit");
 }
 
 int V4L2Camera::StartStreaming ()
 {
+    ALOGD("StartStreaming");
     enum v4l2_buf_type type;
     int ret;
 
@@ -507,6 +511,7 @@ int V4L2Camera::StartStreaming ()
 
 int V4L2Camera::StopStreaming ()
 {
+    ALOGD("StopStreaming");
     enum v4l2_buf_type type;
     int ret;
 

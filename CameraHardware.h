@@ -69,6 +69,7 @@ public:
     */
     bool    isReady();
 
+
     // Wait until the camera becomes ready.
     void    awaitReady();
 
@@ -189,6 +190,7 @@ private:
     bool PowerOn();
     bool PowerOff();
     bool NegotiatePreviewFormat(struct preview_stream_ops* win);
+    nsecs_t frameTimeout();
 
 public:
     /* Constructs Camera instance.

@@ -275,7 +275,7 @@ CameraHardware::~CameraHardware()
     }
 
     // Power off camera
-    PowerOff();
+    //PowerOff();
 }
 
 
@@ -442,7 +442,7 @@ status_t CameraHardware::getCameraInfo(struct camera_info* info, int facing,
     info->facing = facing;
     info->orientation = orientation;
     info->device_version = CAMERA_DEVICE_API_VERSION_1_0;
-    info->static_camera_characteristics = mCameraMetadata;
+    info->static_camera_characteristics = mCameraMetadata;      // REVISIT not used?
 
     return NO_ERROR;
 }
@@ -489,14 +489,14 @@ void CameraHardware::setCallbacks(camera_notify_callback notify_cb,
                                   void* user)
 {
     ALOGD("setCallbacks");
-    {
-        Mutex::Autolock lock(mLock);
-        mNotifyCb = notify_cb;
-        mDataCb = data_cb;
-        mDataCbTimestamp = data_cb_timestamp;
-        mRequestMemory = get_memory;
-        mCallbackCookie = user;
-    }
+
+    Mutex::Autolock lock(mLock);
+
+    mNotifyCb = notify_cb;
+    mDataCb = data_cb;
+    mDataCbTimestamp = data_cb_timestamp;
+    mRequestMemory = get_memory;
+    mCallbackCookie = user;
 }
 
 
@@ -504,20 +504,20 @@ void CameraHardware::setCallbacks(camera_notify_callback notify_cb,
 void CameraHardware::enableMsgType(int32_t msgType)
 {
     ALOGD("enableMsgType: 0x%x", msgType);
-    {
-        Mutex::Autolock lock(mLock);
-        int32_t old = mMsgEnabled;
-        mMsgEnabled |= msgType;
 
-        // If something changed related to the starting or stopping of
-        //  the recording process...
-        if ((msgType & CAMERA_MSG_VIDEO_FRAME) &&
-                (mMsgEnabled ^ old) & CAMERA_MSG_VIDEO_FRAME && mRecordingEnabled) {
+    Mutex::Autolock lock(mLock);
 
-            // Recreate the heaps if toggling recording changes the raw preview size
-            //  and also restart the preview so we use the new size if needed
-            initHeapLocked();
-        }
+    int32_t old = mMsgEnabled;
+    mMsgEnabled |= msgType;
+
+    // If something changed related to the starting or stopping of
+    //  the recording process...
+    if ((msgType & CAMERA_MSG_VIDEO_FRAME) &&
+            (mMsgEnabled ^ old) & CAMERA_MSG_VIDEO_FRAME && mRecordingEnabled) {
+
+        // Recreate the heaps if toggling recording changes the raw preview size
+        //  and also restart the preview so we use the new size if needed
+        initHeapLocked();
     }
 }
 
@@ -526,20 +526,20 @@ void CameraHardware::enableMsgType(int32_t msgType)
 void CameraHardware::disableMsgType(int32_t msgType)
 {
     ALOGD("disableMsgType: %d", msgType);
-    {
-        Mutex::Autolock lock(mLock);
-        int32_t old = mMsgEnabled;
-        mMsgEnabled &= ~msgType;
 
-        // If something changed related to the starting or stopping of
-        //  the recording process...
-        if ((msgType & CAMERA_MSG_VIDEO_FRAME) &&
-                (mMsgEnabled ^ old) & CAMERA_MSG_VIDEO_FRAME && mRecordingEnabled) {
+    Mutex::Autolock lock(mLock);
 
-            // Recreate the heaps if toggling recording changes the raw preview size
-            //  and also restart the preview so we use the new size if needed
-            initHeapLocked();
-        }
+    int32_t old = mMsgEnabled;
+    mMsgEnabled &= ~msgType;
+
+    // If something changed related to the starting or stopping of
+    //  the recording process...
+    if ((msgType & CAMERA_MSG_VIDEO_FRAME) &&
+            (mMsgEnabled ^ old) & CAMERA_MSG_VIDEO_FRAME && mRecordingEnabled) {
+
+        // Recreate the heaps if toggling recording changes the raw preview size
+        //  and also restart the preview so we use the new size if needed
+        initHeapLocked();
     }
 }
 
@@ -584,7 +584,6 @@ CameraHardware::awaitReady()
         }
 
         mReadyCond.wait(mLock);
-
     }
 }
 
@@ -619,7 +618,7 @@ CameraHardware::PreviewThread::PreviewThread(CameraHardware* hw) :
         Thread(false),
         mHardware(hw)
 {
-    ALOGD("PreviewThread: constructed");
+    //ALOGD("PreviewThread: constructed");
 }
 
 
@@ -783,21 +782,22 @@ status_t CameraHardware::storeMetaDataInBuffers(int value)
 status_t CameraHardware::startRecording()
 {
     ALOGD("startRecording");
-    {
-        Mutex::Autolock lock(mLock);
-        if (!mRecordingEnabled) {
-            mRecordingEnabled = true;
 
-            // If something changed related to the starting or stopping of
-            //  the recording process...
-            if (mMsgEnabled & CAMERA_MSG_VIDEO_FRAME) {
+    Mutex::Autolock lock(mLock);
 
-                // Recreate the heaps if toggling recording changes the raw preview size
-                //  and also restart the preview so we use the new size if needed
-                initHeapLocked();
-            }
+    if (!mRecordingEnabled) {
+        mRecordingEnabled = true;
+
+        // If something changed related to the starting or stopping of
+        //  the recording process...
+        if (mMsgEnabled & CAMERA_MSG_VIDEO_FRAME) {
+
+            // Recreate the heaps if toggling recording changes the raw preview size
+            //  and also restart the preview so we use the new size if needed
+            initHeapLocked();
         }
     }
+
     return NO_ERROR;
 }
 
@@ -806,19 +806,19 @@ status_t CameraHardware::startRecording()
 void CameraHardware::stopRecording()
 {
     ALOGD("stopRecording");
-    {
-        Mutex::Autolock lock(mLock);
-        if (mRecordingEnabled) {
-            mRecordingEnabled = false;
 
-            // If something changed related to the starting or stopping of
-            //  the recording process...
-            if (mMsgEnabled & CAMERA_MSG_VIDEO_FRAME) {
+    Mutex::Autolock lock(mLock);
 
-                // Recreate the heaps if toggling recording changes the raw preview size
-                //  and also restart the preview so we use the new size if needed
-                initHeapLocked();
-            }
+    if (mRecordingEnabled) {
+        mRecordingEnabled = false;
+
+        // If something changed related to the starting or stopping of
+        //  the recording process...
+        if (mMsgEnabled & CAMERA_MSG_VIDEO_FRAME) {
+
+            // Recreate the heaps if toggling recording changes the raw preview size
+            //  and also restart the preview so we use the new size if needed
+            initHeapLocked();
         }
     }
 }
@@ -850,8 +850,10 @@ status_t CameraHardware::setAutoFocus()
 {
     ALOGD("setAutoFocus");
     Mutex::Autolock lock(mLock);
+
     if (createThread(beginAutoFocusThread, this) == false)
         return UNKNOWN_ERROR;
+
     return NO_ERROR;
 }
 
@@ -868,6 +870,8 @@ status_t CameraHardware::cancelAutoFocus()
 status_t CameraHardware::takePicture()
 {
     ALOGD("takePicture");
+    Mutex::Autolock lock(mLock);
+
     if (createThread(beginPictureThread, this) == false)
         return UNKNOWN_ERROR;
 
@@ -1673,10 +1677,6 @@ bool CameraHardware::previewThread()
     */
     //ALOGD("previewThread: this=%p",this);
 
-    // Calculate how long to wait between frames and add 20%.
-    int     previewFrameRate = mParameters.getPreviewFrameRate();
-    nsecs_t timeout          = (1200000000 / previewFrameRate);
-
     // Buffers to send messages
     int previewBufferIdx = 0;
 
@@ -1705,7 +1705,7 @@ bool CameraHardware::previewThread()
                         ? frame : (uint8_t*)mRawPreviewBuffer;
 
     // Grab a frame in the raw format YUYV
-    auto status = camera.GrabRawFrame(rawBase, mRawPreviewFrameSize, timeout);
+    auto status = camera.GrabRawFrame(rawBase, mRawPreviewFrameSize, frameTimeout());
 
     if (status == TIMED_OUT) {
         return true;
@@ -1989,6 +1989,15 @@ void CameraHardware::fillPreviewWindow(uint8_t* yuyv, int srcWidth, int srcHeigh
 
 
 
+nsecs_t CameraHardware::frameTimeout()
+{
+    // Calculate how long to wait between frames and add 20%.
+    int     previewFrameRate = mParameters.getPreviewFrameRate();
+    return (1200000000 / previewFrameRate);
+}
+
+
+
 int CameraHardware::beginAutoFocusThread(void *cookie)
 {
     ALOGD("beginAutoFocusThread");
@@ -2071,11 +2080,8 @@ int CameraHardware::pictureThread()
             while (maxFramesToWait > 0 && luminanceStableFor < 4) {
                 uint8_t* ptr = (uint8_t *)mRawBuffer;
 
-                // REVISIT redesign this
-                nsecs_t timeout = 1 * 1000 * 1000;          // try 1 millisecond polling
-
                 // Get the image
-                camera.GrabRawFrame(ptr, (w * h << 1), timeout); // Always YUYV
+                camera.GrabRawFrame(ptr, (w * h << 1), frameTimeout()); // Always YUYV
 
                 // luminance metering points
                 int luminance = 0;
