@@ -29,6 +29,7 @@ LOCAL_SHARED_LIBRARIES := \
 	libui \
 	libutils \
 
+# This module replaces the standard QCom camera HAL.
 LOCAL_MODULE := camera.qcom
 LOCAL_MODULE_TAGS := optional
 LOCAL_MODULE_RELATIVE_PATH := hw
