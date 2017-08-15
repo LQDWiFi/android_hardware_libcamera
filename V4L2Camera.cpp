@@ -29,7 +29,7 @@ extern "C" {
 
 #define HEADERFRAME1 0xaf
 
-#define DEBUG_FRAME 0
+#define DEBUG_FRAME 1
 
 #if DEBUG_FRAME
 #define LOG_FRAME ALOGD
@@ -549,13 +549,24 @@ int V4L2Camera::getFps() const
 /* Grab frame in YUYV mode */
 status_t V4L2Camera::GrabRawFrame (void *frameBuffer, int maxSize, nsecs_t timeout)
 {
+    /*  This can return
+            NO_ERROR - data is available
+            NOT_ENOUGH_DATA - the frame was empty
+            TIMED_OUT - the camera did not return a frame
+            UNKNOWN_ERROR - some camera problem
+    */
+
     //LOG_FRAME("V4L2Camera::GrabRawFrame: frameBuffer:%p, len:%d", frameBuffer, maxSize);
-    int ret;
+    int status = NO_ERROR;
 
-    ret = dequeueBuf(timeout);
+    status = dequeueBuf(timeout);
 
-    if (ret != NO_ERROR) {
-        return ret;
+    if (status != NO_ERROR) {
+        return status;
+    }
+
+    if (videoIn->buf.bytesused == 0) {
+        return NOT_ENOUGH_DATA;
     }
 
     nDequeued++;
@@ -566,7 +577,9 @@ status_t V4L2Camera::GrabRawFrame (void *frameBuffer, int maxSize, nsecs_t timeo
     // And the pointer to the start of the image
     uint8_t* src = (uint8_t*)videoIn->mem[videoIn->buf.index] + videoIn->capCropOffset;
 
-    LOG_FRAME("V4L2Camera::GrabRawFrame - Got Raw frame (%dx%d) (buf:%d @ %p, len:%d)",videoIn->format.fmt.pix.width,videoIn->format.fmt.pix.height,videoIn->buf.index,src,videoIn->buf.bytesused);
+    LOG_FRAME("V4L2Camera::GrabRawFrame - Got Raw frame (%dx%d) (buf:%d @ %p, len:%d)",
+        videoIn->format.fmt.pix.width, videoIn->format.fmt.pix.height,
+        videoIn->buf.index, src, videoIn->buf.bytesused);
 
     /* Avoid crashing! - Make sure there is enough room in the output buffer! */
     if (maxSize < videoIn->outFrameSize) {
@@ -662,11 +675,11 @@ status_t V4L2Camera::GrabRawFrame (void *frameBuffer, int maxSize, nsecs_t timeo
                     uint8_t* pdst = (uint8_t*)frameBuffer;
                     uint8_t* psrc = src;
                     int ss = videoIn->outWidth << 1;
-                    //LOG_FRAME("V4L2Camera::GrabRawFrame - copying out height=%d, bytesperline=%d, strideOut=%d", videoIn->outHeight, videoIn->format.fmt.pix.bytesperline, strideOut);
+                    LOG_FRAME("V4L2Camera::GrabRawFrame - copying out height=%d, bytesperline=%d, strideOut=%d", videoIn->outHeight, videoIn->format.fmt.pix.bytesperline, strideOut);
                     for (h = 0; h < videoIn->outHeight; h++) {
-                        //LOG_FRAME("V4L2Camera::GrabRawFrame - pdst=0x%x, psrc=0x%x", pdst, psrc);
-                        if (psrc + videoIn->format.fmt.pix.bytesperline >= src + videoIn->buf.length) {
-                            LOG_FRAME("V4L2Camera::GrabRawFrame - truncated frame");
+                        // Guard against overflowing the buffer
+                        if ((pdst - (uint8_t*)frameBuffer) + ss > maxSize) {
+                            LOG_FRAME("V4L2Camera::GrabRawFrame - buffer would overflow");
                             break;
                         }
                         memcpy(pdst,psrc,ss);
@@ -719,8 +732,7 @@ status_t V4L2Camera::GrabRawFrame (void *frameBuffer, int maxSize, nsecs_t timeo
     }
 
     /* And Queue the buffer again */
-    ret = ioctl(fd, VIDIOC_QBUF, &videoIn->buf);
-    if (ret < 0) {
+    if (ioctl(fd, VIDIOC_QBUF, &videoIn->buf) < 0) {
         ALOGE("GrabPreviewFrame: VIDIOC_QBUF Failed");
         return UNKNOWN_ERROR;
     }
@@ -728,7 +740,7 @@ status_t V4L2Camera::GrabRawFrame (void *frameBuffer, int maxSize, nsecs_t timeo
     nQueued++;
 
     LOG_FRAME("V4L2Camera::GrabRawFrame - Queued buffer");
-    return NO_ERROR;
+    return status;
 }
 
 

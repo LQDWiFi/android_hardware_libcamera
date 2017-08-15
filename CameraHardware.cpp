@@ -17,7 +17,7 @@
 
 #define LOG_TAG "CameraHardware"
 
-#define DEBUG_FRAME 0
+#define DEBUG_FRAME 1
 
 #if DEBUG_FRAME
 #define LOG_FRAME ALOGD
@@ -533,7 +533,7 @@ void CameraHardware::enableMsgType(int32_t msgType)
 
 void CameraHardware::disableMsgType(int32_t msgType)
 {
-    ALOGD("disableMsgType: %d", msgType);
+    ALOGD("disableMsgType: 0x%x", msgType);
 
     Mutex::Autolock lock(mLock);
 
@@ -1432,7 +1432,7 @@ void CameraHardware::initHeapLocked()
         }
 
     } else {
-        how_raw_preview_big = preview_width * preview_height << 1;  // Raw preview heap always in YUYV
+        how_raw_preview_big = (preview_width * preview_height) << 1;  // Raw preview heap always in YUYV
 
         // If something changed ...
         if (mRawPreviewWidth != preview_width ||
@@ -1482,7 +1482,7 @@ void CameraHardware::initHeapLocked()
     int how_preview_big = 0;
     if (!strcmp(mParameters.getPreviewFormat(),"yuv422i-yuyv")) {
         mPreviewFmt = PIXEL_FORMAT_YCrCb_422_I;
-        how_preview_big = preview_width * preview_height << 1; // 2 bytes per pixel
+        how_preview_big = (preview_width * preview_height) << 1; // 2 bytes per pixel
     } else if (!strcmp(mParameters.getPreviewFormat(),"yuv422sp")) {
         mPreviewFmt = PIXEL_FORMAT_YCbCr_422_SP;
         how_preview_big = (preview_width * preview_height * 3) >> 1; // 1.5 bytes per pixel
@@ -1551,7 +1551,7 @@ void CameraHardware::initHeapLocked()
     int how_recording_big = 0;
     if (!strcmp(mParameters.get(CameraParameters::KEY_VIDEO_FRAME_FORMAT),"yuv422i-yuyv")) {
         mRecFmt = PIXEL_FORMAT_YCrCb_422_I;
-        how_recording_big = video_width * video_height << 1; // 2 bytes per pixel
+        how_recording_big = (video_width * video_height) << 1; // 2 bytes per pixel
     } else if (!strcmp(mParameters.get(CameraParameters::KEY_VIDEO_FRAME_FORMAT),"yuv422sp")) {
         mRecFmt = PIXEL_FORMAT_YCbCr_422_SP;
         how_recording_big = (video_width * video_height * 3) >> 1; // 1.5 bytes per pixel
@@ -1615,7 +1615,7 @@ void CameraHardware::initHeapLocked()
         }
     }
 
-    int how_picture_big = picture_width * picture_height << 1; // Raw picture heap always in YUYV
+    int how_picture_big = (picture_width * picture_height) << 1; // Raw picture heap always in YUYV
     if (how_picture_big != mRawPictureBufferSize) {
 
         // Picture does not need to stop the preview, as the mutex ensures
@@ -1717,7 +1717,7 @@ bool CameraHardware::previewThread()
         return true;
     }
 
-    if (status != NO_ERROR) {
+    if (!(status == NO_ERROR || NOT_ENOUGH_DATA)) {
         // Give up
         ALOGE("The camera has failed");
         return false;
@@ -2039,6 +2039,8 @@ int CameraHardware::pictureThread()
     bool raw = false;
     bool jpeg = false;
     bool shutter = false;
+    status_t status = NO_ERROR;
+
     {
         Mutex::Autolock lock(mLock);
 
@@ -2083,11 +2085,38 @@ int CameraHardware::pictureThread()
             int stride = w << 1;
             int thresh = (w >> 4) * (h >> 4) * 12; // 5% of full range
 
-            while (maxFramesToWait > 0 && luminanceStableFor < 4) {
+            while (status == NO_ERROR && maxFramesToWait > 0 && luminanceStableFor < 4) {
                 uint8_t* ptr = (uint8_t *)mRawBuffer;
 
-                // Get the image
-                camera.GrabRawFrame(ptr, (w * h << 1), frameTimeout()); // Always YUYV
+                /*  Get the image. It takes several frame times for the first one to come
+                    through. Until the frame comes through the luminance will measure as 
+                    zero and the picture will appear to be stable. A longer time-out helps too.
+                */
+                for (int dead = 0; dead < 10; ++dead) {
+                    status = camera.GrabRawFrame(ptr, (w * h) << 1, 10 * frameTimeout()); // Always YUYV
+
+                    if (!(status == TIMED_OUT || status == NOT_ENOUGH_DATA)) {
+                        break;
+                    }
+                }
+
+                if (status != NO_ERROR) {
+                    // Give up
+                    ALOGE("failed to get a frame: status=%d", status);
+                    break;
+                }
+
+#if 0
+                { // debugging
+                    char buf[1000];
+                    char* p = buf;
+                    int y = h * stride / 2;
+                    for (int x = 0; x < 40; x += 2) {
+                        p += sprintf(p, " %02x", ptr[y + x]);
+                    }
+                    ALOGD("picture row:%s", buf);
+                }
+#endif
 
                 // luminance metering points
                 int luminance = 0;
@@ -2116,13 +2145,13 @@ int CameraHardware::pictureThread()
 
             ALOGD("pictureThread: picture taken");
 
-            if (mMsgEnabled & CAMERA_MSG_RAW_IMAGE) {
+            if (status == NO_ERROR && mMsgEnabled & CAMERA_MSG_RAW_IMAGE) {
 
                 ALOGD("pictureThread: took raw picture");
                 raw = true;
             }
 
-            if (mMsgEnabled & CAMERA_MSG_COMPRESSED_IMAGE) {
+            if (status == NO_ERROR && mMsgEnabled & CAMERA_MSG_COMPRESSED_IMAGE) {
 
                 int quality = mParameters.getInt(CameraParameters::KEY_JPEG_QUALITY);
 
@@ -2183,7 +2212,7 @@ int CameraHardware::pictureThread()
 
     ALOGD("pictureThread OK");
 
-    return NO_ERROR;
+    return status;
 }
 
 
