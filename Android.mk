@@ -29,7 +29,15 @@ LOCAL_SHARED_LIBRARIES := \
 	libui \
 	libutils \
 
-# This module replaces the standard QCom camera HAL.
+# This is not a qualcomm module!
+# It's named "camera.qcom" because of how Android loads the HAL modules
+# Android will load the first module it finds in the following order:
+# /system/lib{,64}/camera.${ro.hardware}.so       = camera.qcom
+# /system/lib{,64}/camera.${ro.product.board}.so  = camera.msm8996
+# /system/lib{,64}/camera.${ro.board.platform}.so = camera.msm8996
+# /system/lib{,64}/camera.${ro.arch}.so           = <none>
+# So because there's already a module called camera.msm8996 which is the real Qualcomm camera module
+# The only way we can be considered before that module is to name ourselves "camera.qcom"
 LOCAL_MODULE := camera.qcom
 LOCAL_MODULE_TAGS := optional
 LOCAL_MODULE_RELATIVE_PATH := hw
