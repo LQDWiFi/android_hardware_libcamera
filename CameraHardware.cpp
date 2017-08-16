@@ -1717,7 +1717,7 @@ bool CameraHardware::previewThread()
         return true;
     }
 
-    if (!(status == NO_ERROR || NOT_ENOUGH_DATA)) {
+    if (!(status == NO_ERROR || status == NOT_ENOUGH_DATA)) {
         // Give up
         ALOGE("The camera has failed");
         return false;
