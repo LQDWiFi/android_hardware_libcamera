@@ -17,7 +17,7 @@
 
 #define LOG_TAG "CameraHardware"
 
-#define DEBUG_FRAME 1
+#define DEBUG_FRAME 0
 
 #if DEBUG_FRAME
 #define LOG_FRAME ALOGD
@@ -740,8 +740,8 @@ void CameraHardware::stopPreviewLocked()
         mPreviewThread->requestExitAndWait();
         mPreviewThread.clear();
 
-        camera.Uninit(frameTimeout());
         camera.StopStreaming();
+        camera.Uninit();
         camera.Close();
     }
 }
@@ -2106,18 +2106,6 @@ int CameraHardware::pictureThread()
                     break;
                 }
 
-#if 0
-                { // debugging
-                    char buf[1000];
-                    char* p = buf;
-                    int y = h * stride / 2;
-                    for (int x = 0; x < 40; x += 2) {
-                        p += sprintf(p, " %02x", ptr[y + x]);
-                    }
-                    ALOGD("picture row:%s", buf);
-                }
-#endif
-
                 // luminance metering points
                 int luminance = 0;
                 for (int x = 0; x < (w<<1); x += 32) {
@@ -2184,8 +2172,8 @@ int CameraHardware::pictureThread()
 
             }
 
-            camera.Uninit(frameTimeout());
             camera.StopStreaming();
+            camera.Uninit();
             camera.Close();
 
         } else {

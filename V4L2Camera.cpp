@@ -29,7 +29,7 @@ extern "C" {
 
 #define HEADERFRAME1 0xaf
 
-#define DEBUG_FRAME 1
+#define DEBUG_FRAME 0
 
 #if DEBUG_FRAME
 #define LOG_FRAME ALOGD
@@ -40,7 +40,7 @@ extern "C" {
 namespace android {
 
 V4L2Camera::V4L2Camera ()
-        : fd(-1), nQueued(0), nDequeued(0)
+        : fd(-1)
 {
     videoIn = (struct vdIn *) calloc (1, sizeof (struct vdIn));
 }
@@ -382,13 +382,7 @@ int V4L2Camera::Init(int width, int height, int fps)
             return -1;
         }
 
-        ret = ioctl(fd, VIDIOC_QBUF, &videoIn->buf);
-        if (ret < 0) {
-            ALOGE("Init: VIDIOC_QBUF Failed");
-            return -1;
-        }
-
-        nQueued++;
+        enqueueBuf();
     }
 
     // Reserve temporary buffers, if they will be needed
@@ -455,27 +449,31 @@ int V4L2Camera::Init(int width, int height, int fps)
     return 0;
 }
 
-void V4L2Camera::Uninit(nsecs_t timeout)
+void V4L2Camera::Uninit()
 {
     ALOGD("Uninit");
     int ret;
 
-    /* Dequeue everything */
-    int DQcount = nQueued - nDequeued;
-
-    for (int i = 0; i < DQcount-1; i++) {
-        ret = dequeueBuf(timeout);
-    }
-    nQueued = 0;
-    nDequeued = 0;
-
-    /* Unmap buffers */
+    // Unmapping buffers marks them as no longer in busy.
     for (int i = 0; i < NB_BUFFER; i++)
         if (videoIn->mem[i] != NULL) {
             ret = munmap(videoIn->mem[i], videoIn->buf.length);
             ALOGE_IF(ret < 0, "Uninit: Unmap failed");
             videoIn->mem[i] = NULL;
         }
+
+    /*  Explicitly release the buffers. This safely
+        clears the buffer queue.
+    */
+    memset(&videoIn->rb,0,sizeof(videoIn->rb));
+    videoIn->rb.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+    videoIn->rb.memory = V4L2_MEMORY_MMAP;
+    videoIn->rb.count = 0;
+
+    ret = ioctl(fd, VIDIOC_REQBUFS, &videoIn->rb);
+    if (ret < 0) {
+        ALOGE("Uninit: VIDIOC_REQBUFS release failed: %s", strerror(errno));
+    }
 
     if (videoIn->tmpBuffer)
         free(videoIn->tmpBuffer);
@@ -556,20 +554,24 @@ status_t V4L2Camera::GrabRawFrame (void *frameBuffer, int maxSize, nsecs_t timeo
             UNKNOWN_ERROR - some camera problem
     */
 
-    //LOG_FRAME("V4L2Camera::GrabRawFrame: frameBuffer:%p, len:%d", frameBuffer, maxSize);
+    LOG_FRAME("V4L2Camera::GrabRawFrame: frameBuffer:%p, len:%d", frameBuffer, maxSize);
     int status = NO_ERROR;
 
     status = dequeueBuf(timeout);
 
     if (status != NO_ERROR) {
+        // Failed to dequeue so nothing to enqueue
         return status;
     }
 
+    /*  REVISIT the code flow here is yucky.
+        be relevant.
+    */
     if (videoIn->buf.bytesused == 0) {
+        ALOGE("Ignoring empty buffer ...\n");
+        enqueueBuf();
         return NOT_ENOUGH_DATA;
     }
-
-    nDequeued++;
 
     // Calculate the stride of the output image (YUYV) in bytes
     int strideOut = videoIn->outWidth << 1;
@@ -594,7 +596,7 @@ status_t V4L2Camera::GrabRawFrame (void *frameBuffer, int maxSize, nsecs_t timeo
             case V4L2_PIX_FMT_MJPEG:
                 if(videoIn->buf.bytesused <= HEADERFRAME1) {
                     // Prevent crash on empty image
-                    ALOGE("Ignoring empty buffer ...\n");
+                    ALOGE("Ignoring empty buffer for JPEG ...\n");
                     break;
                 }
 
@@ -731,13 +733,7 @@ status_t V4L2Camera::GrabRawFrame (void *frameBuffer, int maxSize, nsecs_t timeo
         LOG_FRAME("V4L2Camera::GrabRawFrame - Copied frame to destination 0x%p",frameBuffer);
     }
 
-    /* And Queue the buffer again */
-    if (ioctl(fd, VIDIOC_QBUF, &videoIn->buf) < 0) {
-        ALOGE("GrabPreviewFrame: VIDIOC_QBUF Failed");
-        return UNKNOWN_ERROR;
-    }
-
-    nQueued++;
+    enqueueBuf();
 
     LOG_FRAME("V4L2Camera::GrabRawFrame - Queued buffer");
     return status;
@@ -776,7 +772,7 @@ status_t V4L2Camera::dequeueBuf(nsecs_t timeout)
     }
 
     if (e == 0) {
-        ALOGW("dequeueBuf: timed out");
+        LOG_FRAME("dequeueBuf: timed out");
         return TIMED_OUT;
     }
 
@@ -799,6 +795,20 @@ status_t V4L2Camera::dequeueBuf(nsecs_t timeout)
 
     return NO_ERROR;
 }
+
+
+
+status_t V4L2Camera::enqueueBuf()
+{
+    int ret = ioctl(fd, VIDIOC_QBUF, &videoIn->buf);
+    if (ret < 0) {
+        ALOGE("Init: VIDIOC_QBUF Failed");
+        return UNKNOWN_ERROR;
+    }
+
+    return NO_ERROR;
+}
+
 
 
 /* enumerate frame intervals (fps)

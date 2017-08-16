@@ -54,7 +54,7 @@ public:
     void Close();
 
     int  Init(int width, int height, int fps);
-    void Uninit(nsecs_t timeout);
+    void Uninit();
 
     int StartStreaming ();
     int StopStreaming ();
@@ -78,15 +78,13 @@ private:
     bool EnumFrameSizes(int pixfmt);
     bool EnumFrameFormats();
     status_t dequeueBuf(nsecs_t timeout);
+    status_t enqueueBuf();
 
     int saveYUYVtoJPEG(uint8_t* src, uint8_t* dst, int maxsize, int width, int height, int quality);
 
 private:
     struct vdIn *videoIn;
     int fd;
-
-    int nQueued;
-    int nDequeued;
 
     SortedVector<SurfaceDesc> m_AllFmts;        // Available video modes
     SurfaceDesc m_BestPreviewFmt;               // Best preview mode. maximum fps with biggest frame
