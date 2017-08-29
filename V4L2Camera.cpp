@@ -60,7 +60,7 @@ int V4L2Camera::Open (const String8& device)
 
     memset(videoIn, 0, sizeof (struct vdIn));
 
-    if ((fd = open(device.string(), O_RDWR)) == -1) {
+    if ((fd = open(device.string(), O_RDWR | O_NOCTTY)) == -1) {
         ALOGE("ERROR opening V4L interface %s: %s", device.string(), strerror(errno));
         return -1;
     }
