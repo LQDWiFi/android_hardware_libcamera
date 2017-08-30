@@ -23,9 +23,20 @@
 #include <hardware/camera.h>
 #include <utils/threads.h>
 #include <utils/String8.h>
+#include <utils/Vector.h>
+#include "SurfaceSize.h"
 #include "V4L2Camera.h"
 
 namespace android {
+
+struct CameraSpec
+{
+    Vector<String8>     devices;
+    SurfaceSize         defaultSize;
+    int                 facing;         // CAMERA_FACING_FRONT et al
+    int                 orientation;    // 0, 90, 180, 270
+};
+
 
 class CameraHardware : public camera_device {
 
@@ -198,7 +209,7 @@ public:
      *  cameraId - Zero based camera identifier, which is an index of the camera
      *      instance in camera factory's array.
      */
-    CameraHardware(char* devLocation);
+    CameraHardware(const CameraSpec& spec);
 
     /* Destructs EmulatedCamera instance. */
     virtual ~CameraHardware();
@@ -228,7 +239,7 @@ public:
      * NOTE: When this method is called the object is locked.
      * Note that failures in this method are reported as negave EXXX statuses.
      */
-    status_t getCameraInfo(struct camera_info* info, int facing, int orientation);
+    status_t getCameraInfo(struct camera_info* info);
 
 private:
 
@@ -251,7 +262,7 @@ private:
 
     static const int kBufferCount = 4;
 
-    bool tryOpenCamera(const String8& videoFile);
+    bool tryOpenCamera();
     void initStaticCameraMetadata();
     void initHeapLocked();
 
@@ -272,6 +283,7 @@ private:
     class HotPlugThread : public Thread
     {
         CameraHardware* mHardware;
+        size_t          mCheckCount;
 
     public:
         HotPlugThread(CameraHardware* hw);
@@ -294,6 +306,10 @@ private:
     */
     bool                mReady;
 
+    /*  This will be set by the Hotplug thread when it finds the camera.
+    */
+    String8             mVideoDevice;
+
     // This is used to wait for mReady to become true.
     Condition           mReadyCond;
 
@@ -303,7 +319,7 @@ private:
     int                 mPreviewWinHeight;
 
     CameraParameters    mParameters;
-    String8             mVideoDevice;
+    CameraSpec          mSpec;
 
     camera_memory_t*    mRawPreviewHeap;
     int                 mRawPreviewFrameSize;

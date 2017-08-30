@@ -73,17 +73,6 @@
 
 */
 
-static bool
-isLocked(android::Mutex& mLock)
-{
-    if (mLock.tryLock() == 0) {
-        mLock.unlock();
-        return false;
-    }
-    return true;
-}
-
-
 #define ARRAY_SIZE(a) (sizeof(a) / sizeof(a[0]))
 #define UNUSED(x) ((void)(x))
 
@@ -163,16 +152,21 @@ isLocked(android::Mutex& mLock)
 #define CAMERA_POWER_FILE  "camera.power_file"
 
 namespace android {
+//======================================================================
+
+static const size_t     HotPlugCheckInterval    = 1;    // in seconds
+static const size_t     HotPlugComplainInterval = 30;   // in seconds
 
 
-CameraHardware::CameraHardware(char* devLocation) :
-        mReady(false),
+CameraHardware::CameraHardware(const CameraSpec& spec)
+  :     mReady(false),
         mWin(0),
         mPreviewWinFmt(PIXEL_FORMAT_UNKNOWN),
         mPreviewWinWidth(0),
         mPreviewWinHeight(0),
 
         mParameters(),
+        mSpec(spec),
 
         mRawPreviewHeap(0),
         mRawPreviewFrameSize(0),
@@ -208,9 +202,6 @@ CameraHardware::CameraHardware(char* devLocation) :
         mCameraPowerFile(0),
         mCameraMetadata(0)
 {
-    //Store the video device location
-    mVideoDevice = devLocation;
-
     // Initialize camera_device descriptor for this object.
 
     /* Common header */
@@ -310,7 +301,7 @@ bool CameraHardware::PowerOn()
         ALOGE("Could not open %s for writing.", mCameraPowerFile);
         return false;
     }
-
+#if 0
     // Wait until the camera is recognized or timed out
     int timeOut = 500;
     do {
@@ -329,7 +320,7 @@ bool CameraHardware::PowerOn()
     } else {
         ALOGE("Unable to power camera");
     }
-
+#endif
     return false;
 }
 
@@ -391,7 +382,8 @@ bool CameraHardware::NegotiatePreviewFormat(struct preview_stream_ops* win)
 
 
 CameraHardware::HotPlugThread::HotPlugThread(CameraHardware* hw)
-  : mHardware(hw)
+  : mHardware   (hw),
+    mCheckCount (0)
 {
 }
 
@@ -399,7 +391,9 @@ CameraHardware::HotPlugThread::HotPlugThread(CameraHardware* hw)
 
 void CameraHardware::HotPlugThread::onFirstRef()
 {
-    run("CameraHotPlugThread", PRIORITY_BACKGROUND);
+    if (!mHardware->mSpec.devices.isEmpty()) {
+        run("CameraHotPlugThread", PRIORITY_BACKGROUND);
+    }
 }
 
 
@@ -408,10 +402,13 @@ bool CameraHardware::HotPlugThread::threadLoop()
 {
     /*  The thread will be terminated after the camera has been opened.
     */
-    auto ok = mHardware->tryOpenCamera(mHardware->mVideoDevice);
+    auto ok = mHardware->tryOpenCamera();
 
     if (!ok) {
-        ::usleep(1000 * 1000);
+        if (mCheckCount++ % HotPlugComplainInterval == 0) {
+            ALOGI("did not open any camera");
+        }
+        ::usleep(HotPlugCheckInterval * 1000 * 1000);
     }
 
     return !ok;
@@ -443,12 +440,11 @@ status_t CameraHardware::closeCamera()
 
 
 
-status_t CameraHardware::getCameraInfo(struct camera_info* info, int facing,
-                                       int orientation)
+status_t CameraHardware::getCameraInfo(struct camera_info* info)
 {
     ALOGD("getCameraInfo");
-    info->facing = facing;
-    info->orientation = orientation;
+    info->facing = mSpec.facing;
+    info->orientation = mSpec.orientation;
     info->device_version = CAMERA_DEVICE_API_VERSION_1_0;
     info->static_camera_characteristics = mCameraMetadata;      // REVISIT not used?
 
@@ -650,7 +646,7 @@ status_t CameraHardware::startPreviewLocked()
     //ALOGD("startPreviewLocked");
 
     if (!mReady) {
-        ALOGD("startPreviewLocked: camera not ready");
+        ALOGE("preview: the camera is not ready");
         return NO_INIT;
     }
 
@@ -1046,49 +1042,63 @@ status_t CameraHardware::dumpCamera(int fd)
 // ---------------------------------------------------------------------------
 
 
-bool CameraHardware::tryOpenCamera(const String8& videoFile)
+bool CameraHardware::tryOpenCamera()
 {
     /*  This will be called from the hotplug thread to try to
         open the video file.  It may take a long time for the camera to
         be enumerated.
         
         This returns true if the parameters are set.
+
+        REVISIT - take into account the mSpec preferred size
     */
     FromCamera fc;
+    bool       ok = false;
+    String8    device;
 
-    ALOGD("tryOpenCamera");
+    for (auto& videoFile : mSpec.devices) {
+        ALOGD("tryOpenCamera: trying %s", videoFile.string());
 
-    if (camera.Open(videoFile) != NO_ERROR) {
-        ALOGI("did not open %s", videoFile.string());
-        return false;
+        if (camera.Open(videoFile) == NO_ERROR) {
+
+            ALOGI("opened %s", videoFile.string());
+
+            device = videoFile;
+            ok     = true;
+
+            // Get the default preview format
+            fc.pw = camera.getBestPreviewFmt().getWidth();
+            fc.ph = camera.getBestPreviewFmt().getHeight();
+            fc.pfps = camera.getBestPreviewFmt().getFps();
+
+            // Get the default picture format
+            fc.fw = camera.getBestPictureFmt().getWidth();
+            fc.fh = camera.getBestPictureFmt().getHeight();
+
+            // Get all the available sizes
+            fc.avSizes = camera.getAvailableSizes();
+
+            // Get all the available Fps
+            fc.avFps = camera.getAvailableFps();
+
+            break;
+        }
     }
 
-    ALOGI("opened %s", videoFile.string());
-
-    // Get the default preview format
-    fc.pw = camera.getBestPreviewFmt().getWidth();
-    fc.ph = camera.getBestPreviewFmt().getHeight();
-    fc.pfps = camera.getBestPreviewFmt().getFps();
-
-    // Get the default picture format
-    fc.fw = camera.getBestPictureFmt().getWidth();
-    fc.fh = camera.getBestPictureFmt().getHeight();
-
-    // Get all the available sizes
-    fc.avSizes = camera.getAvailableSizes();
-
-    // Get all the available Fps
-    fc.avFps = camera.getAvailableFps();
+    if (!ok) {
+        return false;
+    }
 
     Mutex::Autolock lock(mLock);
 
     // Allow the preview thread to start
-    mReady = true;
+    mReady       = true;
+    mVideoDevice = device;
 
     /*  This will call setParametersLocked() which will
         start the preview thread.
     */
-    auto ok = fc.set(*this);
+    ok = fc.set(*this);
 
     // Signal that the camera is ready.
     mReadyCond.broadcast();
@@ -2043,6 +2053,11 @@ int CameraHardware::pictureThread()
 
     {
         Mutex::Autolock lock(mLock);
+
+        if (!mReady) {
+            ALOGE("take_picture: the camera is not yet ready");
+            return NO_INIT;
+        }
 
         int w, h;
         mParameters.getPictureSize(&w, &h);

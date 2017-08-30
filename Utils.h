@@ -44,6 +44,32 @@
 #define UTILS_H
 
 #include <stdint.h>
+#include <utils/String8.h>
+#include <utils/Vector.h>
+#include <memory>
+
+//======================================================================
+/*  Shorthands for shared_ptr.
+*/
+
+template<typename T>
+using Ref = std::shared_ptr<T>;
+
+
+template<typename T, typename ... Args>
+static inline
+Ref<T>
+mkRef(Args&& ...args)
+{
+    return std::make_shared<T>(std::forward<Args>(args)...);
+}
+
+
+using android::String8;
+using android::Vector;
+
+namespace utils {
+//======================================================================
 
 int jpeg_decode(uint8_t *pic,int stride, uint8_t *buf, int width, int height);
 
@@ -65,5 +91,26 @@ int jpeg_decode(uint8_t *pic,int stride, uint8_t *buf, int width, int height);
 #define ERR_DEPTH_MISMATCH 15
 
 
+typedef Vector<String8> StringVec;
 
+// These are easier to use than the Tokenizer class.
+
+/*  Split text into lines. The new-lines are omitted.
+*/
+extern StringVec splitLines(const String8& text);
+
+
+/*  Split text into words at white space.
+*/
+extern StringVec splitWords(const String8& text);
+
+
+/*  Read all of a file.  Returns empty if the file could
+    not be found.
+*/
+extern String8 readFile(const String8& path);
+
+
+//======================================================================
+}  // namespace utils
 #endif

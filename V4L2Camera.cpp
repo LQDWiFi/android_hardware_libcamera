@@ -600,7 +600,7 @@ status_t V4L2Camera::GrabRawFrame (void *frameBuffer, int maxSize, nsecs_t timeo
                     break;
                 }
 
-                if (jpeg_decode((uint8_t*)frameBuffer, strideOut, src, videoIn->outWidth, videoIn->outHeight) < 0) {
+                if (utils::jpeg_decode((uint8_t*)frameBuffer, strideOut, src, videoIn->outWidth, videoIn->outHeight) < 0) {
                     ALOGE("jpeg decode errors\n");
                     break;
                 }

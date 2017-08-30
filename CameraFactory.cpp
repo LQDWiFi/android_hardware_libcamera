@@ -20,30 +20,31 @@
  */
 
 #define LOG_NDEBUG 0
-#define DEFAULT_DEVICE_FRONT "/dev/video1"
-#define DEFAULT_DEVICE_BACK  "/dev/video0"
-#define CONFIG_FILE "/etc/camera.cfg"
 #define LOG_TAG "CameraFactory"
+
+/*  REVISIT either get this path from a property or get the config
+    as a string from the property.  The former would be better as property
+    values are limited in size.
+*/
+#define CONFIG_FILE "/etc/camera.cfg"
+
+#include "CameraFactory.h"
+#include "Utils.h"
 
 #include <cutils/log.h>
 #include <cutils/properties.h>
-#include "CameraFactory.h"
 
 extern camera_module_t HAL_MODULE_INFO_SYM;
 
 
 namespace android {
+//======================================================================
 
 ANDROID_SINGLETON_STATIC_INSTANCE(CameraFactory);
 
 
 CameraFactory::CameraFactory()
-  : Singleton<CameraFactory>(),
-    mCamera             (0),
-    mCameraDevices      (0),
-    mCameraFacing       (0),
-    mCameraOrientation  (0),
-    mCameraNum          (0)
+  : Singleton<CameraFactory>()
 {
     ALOGD("CameraFactory");
 
@@ -58,10 +59,6 @@ CameraFactory::CameraFactory()
 CameraFactory::~CameraFactory()
 {
     ALOGD("~CameraFactory");
-    for (int i=0; i < getCameraNum(); i++) {
-        delete mCamera[i];
-    }
-    free(mCamera);
 }
 
 /****************************************************************************
@@ -78,20 +75,21 @@ int CameraFactory::cameraDeviceOpen(const hw_module_t* module,int camera_id, hw_
 
     *device = NULL;
 
-    if (!mCamera || camera_id < 0 || camera_id >= getCameraNum()) {
-        ALOGE("%s: Camera id %d is out of bounds (%d)",
-             __FUNCTION__, camera_id, getCameraNum());
+    if (mCamera.isEmpty() || camera_id < 0 || camera_id >= getCameraNum()) {
+        ALOGE("%s: Camera id %d is out of bounds (%d)", __FUNCTION__, camera_id, getCameraNum());
         return -EINVAL;
     }
 
     return mCamera[camera_id]->connectCamera(module, device);
 }
 
+
+
 /* Returns the number of available cameras */
 int CameraFactory::getCameraNum()
 {
-    ALOGD("getCameraNum: %d", mCameraNum);
-    return mCameraNum;
+    ALOGD("getCameraNum: %d", mCamera.size());
+    return mCamera.size();
 }
 
 
@@ -104,83 +102,100 @@ int CameraFactory::getCameraInfo(int camera_id, struct camera_info* info)
     ALOGD("getCameraInfo: id = %d, info = %p", camera_id, info);
 
     if (camera_id < 0 || camera_id >= getCameraNum()) {
-        ALOGE("%s: Camera id %d is out of bounds (%d)",
-                __FUNCTION__, camera_id, getCameraNum());
+        ALOGE("%s: Camera id %d is out of bounds (%d)", __FUNCTION__, camera_id, getCameraNum());
         return -EINVAL;
     }
 
-    return mCamera[camera_id]->getCameraInfo(info, mCameraFacing[camera_id],
-                                         mCameraOrientation[camera_id]);
+    return mCamera[camera_id]->getCameraInfo(info);
 }
 
 
 
-// Parse a simple configuration file
-void CameraFactory::parseConfig(const char* configFile)
+/*  Parse a simple configuration file
+    Each line describes one CameraHardware object. There are shell-like
+    options on the line:
+        camera options...
+    where the options are:
+        -device FILE        : a device file to open. There can be more than one of these.
+        -res 1920x1080      : the default resolution to use
+        -role [front|back|other]  : defaults to other for the USB camera
+*/
+int CameraFactory::parseConfig(const char* configFile)
 {
     ALOGD("parseConfig: configFile = %s", configFile);
 
-    FILE* config = fopen(configFile, "r");
-    if (config != NULL) {
-        char line[128];
-        char arg1[128];
-        char arg2[128];
-        int  arg3;
+    auto text = utils::readFile(String8(configFile));
 
-        while (fgets(line, sizeof line, config) != NULL) {
-            int lineStart = strspn(line, " \t\n\v" );
+    if (text.isEmpty()) {
+        ALOGE("Cannot read the configuration file ");
+        return UNKNOWN_ERROR;
+    }
 
-            if (line[lineStart] == '#')
-                continue;
+    for (auto& line : utils::splitLines(text)) {
+ALOGD("parseConfig: line = %s", line.string());
+        auto words = utils::splitWords(line);
+ALOGD("parseConfig: #words = %d", words.size());
 
-            sscanf(line, "%s %s %d", arg1, arg2, &arg3);
-            if (arg3 != 0 && arg3 != 90 && arg3 != 180 && arg3 != 270)
-                arg3 = 0;
+        if (words.isEmpty()) {
+            continue;
+        }
 
-            if (strcmp(arg1, "front") == 0) {
-                newCameraConfig(CAMERA_FACING_FRONT, arg2, arg3);
-            } else if (strcmp(arg1, "back") == 0) {
-                newCameraConfig(CAMERA_FACING_BACK, arg2, arg3);
-            } else {
-                ALOGD("parseConfig: Unrecognized config line '%s'", line);
+        size_t ix = 0;
+        auto cmd = words[ix];
+ALOGD("parseConfig: cmd = %s", cmd.string());
+
+        if (cmd[0] == '#') {
+            // A comment line
+            continue;
+        }
+
+        if (cmd == "camera") {
+            CameraSpec spec;
+
+            spec.facing = CAMERA_FACING_EXTERNAL;
+            spec.orientation = 0;
+
+            while ((ix + 1) < words.size()) {
+                auto& opt = words[++ix];
+ALOGD("parseConfig: opt = %s, ix = %d", opt.string(), ix);
+
+                if (opt == "-device" && (ix + 1) < words.size()) {
+                    auto& dev = words[++ix];
+ALOGD("parseConfig: dev = %s", dev.string());
+
+                    if (!dev.isEmpty()) {
+                        spec.devices.push_back(dev);
+                    }
+                } else if (opt == "-res" && (ix + 1) < words.size()) {
+                    auto& res = words[++ix];
+                    int w, h;
+
+                    if (sscanf(res.string(), "%dx%d", &w, &h) == 2) {
+                        spec.defaultSize = SurfaceSize(w, h);
+                    }
+                } else if (opt == "-role" && (ix + 1) < words.size()) {
+                    auto& role = words[++ix];
+
+                    if (role == "front") {
+                        spec.facing = CAMERA_FACING_FRONT;
+                    } else if (role == "back") {
+                        spec.facing = CAMERA_FACING_BACK;
+                    }
+                }
             }
-        }
-    } else {
-        ALOGD("%s not found, using camera configuration defaults", CONFIG_FILE);
-        if (access(DEFAULT_DEVICE_BACK, F_OK) != -1){
-            ALOGD("Found device %s", DEFAULT_DEVICE_BACK);
-            newCameraConfig(CAMERA_FACING_BACK, DEFAULT_DEVICE_BACK, 0);
-        }
-        if (access(DEFAULT_DEVICE_FRONT, F_OK) != -1){
-            ALOGD("Found device %s", DEFAULT_DEVICE_FRONT);
-            newCameraConfig(CAMERA_FACING_FRONT, DEFAULT_DEVICE_FRONT, 0);
+
+            // Create the camera entry
+            mCamera.push_back(mkRef<CameraHardware>(spec));
+
+        } else {
+            ALOGD("Unrecognized config line '%s'", line.string());
         }
     }
 
-    ALOGD("parseConfig: done");
+    return NO_ERROR;
 }
 
-// Although realloc could be a costly operation, we only execute this function usually 2 times
-void CameraFactory::newCameraConfig(int facing, const char* location, int orientation)
-{
-    // Keep track of cameras
-    int camera_id = mCameraNum++;
 
-    // Grow the information arrays
-    mCamera = (CameraHardware**) realloc(mCamera, mCameraNum * sizeof(CameraHardware*));
-    mCameraDevices = (char**) realloc(mCameraDevices, mCameraNum * sizeof(char*));
-    mCameraFacing = (int*) realloc(mCameraFacing, mCameraNum * sizeof(int));
-    mCameraOrientation = (int*) realloc(mCameraOrientation, mCameraNum * sizeof(int));
-
-
-    // Store the values for each camera_id
-    mCameraDevices[camera_id] = strdup(location);
-    mCamera[camera_id] = new CameraHardware(mCameraDevices[camera_id]);
-    mCameraFacing[camera_id] = facing;
-    mCameraOrientation[camera_id] = orientation;
-    ALOGD("newCameraConfig: %d -> %s (%d)",
-          mCameraFacing[camera_id], mCameraDevices[camera_id], mCameraOrientation[camera_id]);
-}
 
 /****************************************************************************
  * Camera HAL API callbacks.
@@ -200,8 +215,7 @@ int CameraFactory::device_open(
      */
 
     if (module != &HAL_MODULE_INFO_SYM.common) {
-        ALOGE("%s: Invalid module %p expected %p",
-                __FUNCTION__, module, &HAL_MODULE_INFO_SYM.common);
+        ALOGE("%s: Invalid module %p expected %p", __FUNCTION__, module, &HAL_MODULE_INFO_SYM.common);
         return -EINVAL;
     }
 
@@ -224,8 +238,7 @@ int CameraFactory::get_number_of_cameras(void)
 
 
 
-int CameraFactory::get_camera_info(int camera_id,
-                                           struct camera_info* info)
+int CameraFactory::get_camera_info(int camera_id, struct camera_info* info)
 {
     ALOGD("get_camera_info");
     return getInstance().getCameraInfo(camera_id, info);
@@ -240,4 +253,5 @@ struct hw_module_methods_t CameraFactory::mCameraModuleMethods = {
     open: CameraFactory::device_open
 };
 
+//======================================================================
 }; /* namespace android */

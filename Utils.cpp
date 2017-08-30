@@ -41,10 +41,21 @@
 
 #include "Utils.h"
 #include <malloc.h>
-#include <string.h>
 
+#include <cstring>
+#include <cctype>
+
+#include <fcntl.h>
+#include <stdlib.h>
+#include <unistd.h>
+
+#undef LOG_TAG
 #define LOG_TAG "CameraHardware"
 #include <utils/Log.h>
+
+
+namespace utils {
+//======================================================================
 
 /*clip value between 0 and 255*/
 #define CLIP(value) (uint8_t)(((value)>0xFF)?0xff:(((value)<0)?0:(value)))
@@ -1306,3 +1317,105 @@ static void idctqtab(uint8_t *qin,PREC *qout)
 			qout[zig[i * 8 + j]] = qin[zig[i * 8 + j]] *
 				IMULT(aaidct[i], aaidct[j]);
 }
+
+
+//======================================================================
+
+StringVec splitLines(const String8& text)
+{
+    StringVec result;
+    auto* p = text.string();
+
+    while (*p) {
+        if (auto q = std::strchr(p, '\n')) {
+            result.push_back(String8(p, q - p));
+            p = q + 1;
+        } else {
+            result.push_back(String8(p));
+            break;
+        }
+    }
+
+    return result;
+}
+
+
+
+StringVec splitWords(const String8& text)
+{
+    // Split words at white space
+    StringVec words;
+    bool inWS = true;
+    const char* p = text.string();
+    const char* w = 0;
+
+    for ( ; *p; ++p) {
+        if (std::isspace(*p)) {
+            if (!inWS) {
+                // End of the word
+                words.push_back(String8(w, p - w));
+                w = 0;
+                inWS = true;
+            }
+        } else {
+            if (inWS) {
+                w = p;
+                inWS = false;
+            }
+        }
+    }
+
+    if (w) {
+        // the trailing word
+        words.push_back(String8(w));
+    }
+
+    return words;
+}
+
+
+
+String8 readFile(const String8& path)
+{
+    String8 result;
+    bool error = false;
+
+    int fd = ::open(path.string(), O_RDONLY);
+
+    if (fd >= 0) {
+        static const size_t ChunkSize = 8192;
+        char buf[ChunkSize + 1];
+
+        while (!error) {
+            int n = ::read(fd, buf, ChunkSize);
+
+            if (n > 0) {
+                buf[n] = 0;
+                result.append(buf);
+            } else
+            if (n == 0) {
+                break;
+            } else
+            if (errno == EINTR) {
+                continue;
+            } else {
+                // the only error indication
+                error = true;
+            }
+        }
+
+        ::close(fd);
+    } else {
+        error = true;
+    }
+
+    if (error) {
+        return String8();
+    }
+
+    return result;
+}
+
+
+//======================================================================
+}  // namespace utils

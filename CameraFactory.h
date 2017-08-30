@@ -21,7 +21,9 @@
 #include <hardware/hardware.h>
 #include <hardware/camera.h>
 #include <utils/Singleton.h>
+#include <utils/Vector.h>
 #include "CameraHardware.h"
+#include "Utils.h"
 
 namespace android {
 
@@ -97,16 +99,11 @@ private:
                            const char* name,
                            hw_device_t** device);
 
-    void parseConfig(const char* configFile);
-    void newCameraConfig(int facing, const char* location, int orientation);
+    int parseConfig(const char* configFile);
 
 private:
     /* Camera hardware */
-    CameraHardware**    mCamera;
-    char**              mCameraDevices;
-    int*                mCameraFacing;
-    int*                mCameraOrientation;
-    int                 mCameraNum;
+    Vector<Ref<CameraHardware>> mCamera;
 
 public:
     /* Contains device open entry point, as required by HAL API. */
