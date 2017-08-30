@@ -132,9 +132,7 @@ int CameraFactory::parseConfig(const char* configFile)
     }
 
     for (auto& line : utils::splitLines(text)) {
-ALOGD("parseConfig: line = %s", line.string());
         auto words = utils::splitWords(line);
-ALOGD("parseConfig: #words = %d", words.size());
 
         if (words.isEmpty()) {
             continue;
@@ -142,7 +140,6 @@ ALOGD("parseConfig: #words = %d", words.size());
 
         size_t ix = 0;
         auto cmd = words[ix];
-ALOGD("parseConfig: cmd = %s", cmd.string());
 
         if (cmd[0] == '#') {
             // A comment line
@@ -157,11 +154,10 @@ ALOGD("parseConfig: cmd = %s", cmd.string());
 
             while ((ix + 1) < words.size()) {
                 auto& opt = words[++ix];
-ALOGD("parseConfig: opt = %s, ix = %d", opt.string(), ix);
 
                 if (opt == "-device" && (ix + 1) < words.size()) {
                     auto& dev = words[++ix];
-ALOGD("parseConfig: dev = %s", dev.string());
+                    ALOGD("parseConfig: device = %s", dev.string());
 
                     if (!dev.isEmpty()) {
                         spec.devices.push_back(dev);
@@ -169,6 +165,8 @@ ALOGD("parseConfig: dev = %s", dev.string());
                 } else if (opt == "-res" && (ix + 1) < words.size()) {
                     auto& res = words[++ix];
                     int w, h;
+
+                    ALOGD("parseConfig: resolution = %s", res.string());
 
                     if (sscanf(res.string(), "%dx%d", &w, &h) == 2) {
                         spec.defaultSize = SurfaceSize(w, h);

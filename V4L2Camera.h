@@ -50,7 +50,7 @@ public:
     V4L2Camera();
     ~V4L2Camera();
 
-    int  Open(const String8& device);
+    int  Open(const String8& device, const SurfaceSize& preferred);
     void Close();
 
     int  Init(int width, int height, int fps);
@@ -76,7 +76,7 @@ public:
 private:
     bool EnumFrameIntervals(int pixfmt, int width, int height);
     bool EnumFrameSizes(int pixfmt);
-    bool EnumFrameFormats();
+    bool EnumFrameFormats(const SurfaceSize& preferred);
     status_t dequeueBuf(nsecs_t timeout);
     status_t enqueueBuf();
 

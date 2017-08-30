@@ -51,7 +51,9 @@ V4L2Camera::~V4L2Camera()
     free(videoIn);
 }
 
-int V4L2Camera::Open (const String8& device)
+
+
+int V4L2Camera::Open(const String8& device, const SurfaceSize& preferred)
 {
     int ret;
 
@@ -61,7 +63,10 @@ int V4L2Camera::Open (const String8& device)
     memset(videoIn, 0, sizeof (struct vdIn));
 
     if ((fd = open(device.string(), O_RDWR | O_NOCTTY)) == -1) {
-        ALOGE("ERROR opening V4L interface %s: %s", device.string(), strerror(errno));
+        // We expect to try various paths until one is found. ENOENT is not a useful complaint.
+        if (errno != ENOENT) {
+            ALOGE("ERROR opening V4L interface %s: %s", device.string(), strerror(errno));
+        }
         return -1;
     }
 
@@ -82,7 +87,7 @@ int V4L2Camera::Open (const String8& device)
     }
 
     /* Enumerate all available frame formats */
-    EnumFrameFormats();
+    EnumFrameFormats(preferred);
 
     ALOGD("Opened");
     return ret;
@@ -152,7 +157,7 @@ int V4L2Camera::Init(int width, int height, int fps)
         return -1;
     }
 
-    // Try to get the closest match ...
+    // Try to get the closest preferredmatch ...
     SurfaceDesc closest;
     int closestDArea = -1;
     int closestDFps = -1;
@@ -956,7 +961,7 @@ bool V4L2Camera::EnumFrameSizes(int pixfmt)
  * height: current selected height
  *
  * returns: pointer to LFormats struct containing list of available frame formats */
-bool V4L2Camera::EnumFrameFormats()
+bool V4L2Camera::EnumFrameFormats(const SurfaceSize& preferred)
 {
     ALOGD("V4L2Camera::EnumFrameFormats");
     struct v4l2_fmtdesc fmt;
@@ -985,29 +990,56 @@ bool V4L2Camera::EnumFrameFormats()
     m_BestPreviewFmt = SurfaceDesc();
     m_BestPictureFmt = SurfaceDesc();
 
-    unsigned int i;
-    for (i=0; i<m_AllFmts.size(); i++) {
-        SurfaceDesc s = m_AllFmts[i];
+    if (preferred.getWidth() != 0 && preferred.getHeight() != 0) {
+        // Look for the highest speed in the preferred size
+        for (size_t i = 0; i < m_AllFmts.size(); i++) {
+            SurfaceDesc s = m_AllFmts[i];
 
-        // Prioritize size over everything else when taking pictures. use the
-        // least fps possible, as that usually means better quality
-        if ((s.getSize()  > m_BestPictureFmt.getSize()) ||
-            (s.getSize() == m_BestPictureFmt.getSize() && s.getFps() < m_BestPictureFmt.getFps() )
-            ) {
-            m_BestPictureFmt = s;
-        }
+            // Prioritize size over everything else when taking pictures. use the
+            // least fps possible, as that usually means better quality
+            if (s.getSize() == preferred && (m_BestPictureFmt.getFps() == 0 || s.getFps() < m_BestPictureFmt.getFps())) {
+                m_BestPictureFmt = s;
+            }
 
-        // Prioritize fps, then size when doing preview
-        if ((s.getFps()  > m_BestPreviewFmt.getFps()) ||
-            (s.getFps() == m_BestPreviewFmt.getFps() && s.getSize() > m_BestPreviewFmt.getSize() )
-            ) {
-
-            // REVISIT But limit the preview size
-            if (s.getSize().getWidth() <= MaxPreviewWidth) {
+            // Prioritize fps when doing preview
+            if (s.getSize() == preferred && (m_BestPreviewFmt.getFps() == 0 || s.getFps() > m_BestPreviewFmt.getFps())) {
                 m_BestPreviewFmt = s;
             }
         }
+    } 
 
+    // If we haven't got a preview format yet
+    if (m_BestPreviewFmt.getWidth() == 0) {
+
+        for (size_t i = 0; i < m_AllFmts.size(); i++) {
+            SurfaceDesc s = m_AllFmts[i];
+
+            // Prioritize fps, then size when doing preview
+            if ((s.getFps()  > m_BestPreviewFmt.getFps()) ||
+                (s.getFps() == m_BestPreviewFmt.getFps() && s.getSize() > m_BestPreviewFmt.getSize() )
+                ) {
+
+                // REVISIT But limit the preview size
+                if (s.getSize().getWidth() <= MaxPreviewWidth) {
+                    m_BestPreviewFmt = s;
+                }
+            }
+        }
+    }
+
+    if (m_BestPictureFmt.getWidth() == 0) {
+
+        for (size_t i = 0; i < m_AllFmts.size(); i++) {
+            SurfaceDesc s = m_AllFmts[i];
+
+            // Prioritize size over everything else when taking pictures. use the
+            // least fps possible, as that usually means better quality
+            if ((s.getSize()  > m_BestPictureFmt.getSize()) ||
+                (s.getSize() == m_BestPictureFmt.getSize() && s.getFps() < m_BestPictureFmt.getFps() )
+                ) {
+                m_BestPictureFmt = s;
+            }
+        }
     }
 
     return true;

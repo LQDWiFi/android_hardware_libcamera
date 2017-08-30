@@ -667,7 +667,7 @@ status_t CameraHardware::startPreviewLocked()
 
     int fps = mParameters.getPreviewFrameRate();
 
-    status_t ret = camera.Open(mVideoDevice);
+    status_t ret = camera.Open(mVideoDevice, mSpec.defaultSize);
     if (ret != NO_ERROR) {
         ALOGE("startPreviewLocked: Failed to initialize Camera");
         return ret;
@@ -1059,7 +1059,7 @@ bool CameraHardware::tryOpenCamera()
     for (auto& videoFile : mSpec.devices) {
         ALOGD("tryOpenCamera: trying %s", videoFile.string());
 
-        if (camera.Open(videoFile) == NO_ERROR) {
+        if (camera.Open(videoFile, mSpec.defaultSize) == NO_ERROR) {
 
             ALOGI("opened %s", videoFile.string());
 
@@ -2075,7 +2075,7 @@ int CameraHardware::pictureThread()
 
         ALOGD("pictureThread: taking picture (%d x %d)", w, h);
 
-        if (camera.Open(mVideoDevice) == NO_ERROR) {
+        if (camera.Open(mVideoDevice, mSpec.defaultSize) == NO_ERROR) {
             camera.Init(w, h, 1);
 
             /* Retrieve the real size being used */
