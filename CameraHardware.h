@@ -26,6 +26,7 @@
 #include <utils/Vector.h>
 #include "SurfaceSize.h"
 #include "V4L2Camera.h"
+#include "Utils.h"
 
 namespace android {
 
@@ -102,10 +103,10 @@ public:
 
     /* Actual handler for camera_device_ops_t::preview_enabled callback.
      * NOTE: When this method is called the object is locked.
-     * Return:
+     * preview_enabled must return:
      *  0 if preview is disabled, != 0 if enabled.
      */
-    int isPreviewEnabled();
+    bool isPreviewEnabled();
 
     /* Actual handler for camera_device_ops_t::store_meta_data_in_buffers callback.
      * NOTE: When this method is called the object is locked.
@@ -348,8 +349,8 @@ private:
     bool                mRecordingEnabled;
 
     // protected by mLock
-    sp<PreviewThread>   mPreviewThread;
-    sp<HotPlugThread>   mHotPlugThread;
+    Ref<PreviewThread>  mPreviewThread;
+    Ref<HotPlugThread>  mHotPlugThread;
 
     camera_notify_callback      mNotifyCb;
     camera_data_callback        mDataCb;

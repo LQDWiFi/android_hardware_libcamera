@@ -222,7 +222,7 @@ CameraHardware::CameraHardware(const CameraSpec& spec)
     FromCamera fc;
     fc.set(*this);
 
-    mHotPlugThread = new HotPlugThread(this);
+    mHotPlugThread = mkRef<HotPlugThread>(this);
 
     // REVISIT no longer used
     initStaticCameraMetadata();
@@ -233,13 +233,13 @@ CameraHardware::CameraHardware(const CameraSpec& spec)
 CameraHardware::~CameraHardware()
 {
     ALOGD("CameraHardware::destruct");
-    if (mPreviewThread != 0) {
+    if (mPreviewThread) {
         stopPreview();
     }
 
-    if (mHotPlugThread != 0) {
+    if (mHotPlugThread) {
         mHotPlugThread->requestExitAndWait();
-        mHotPlugThread.clear();
+        mHotPlugThread.reset();
     }
 
     // Release all memory heaps
@@ -474,7 +474,7 @@ status_t CameraHardware::setPreviewWindow(struct preview_stream_ops* window)
         mWin = window;
 
         // setup the preview window geometry to be able to use the full preview window
-        if (mPreviewThread != 0 && mWin != 0) {
+        if (mPreviewThread && mWin != 0) {
             ALOGD("setPreviewWindow - Negotiating preview format");
             NegotiatePreviewFormat(mWin);
         }
@@ -651,7 +651,7 @@ status_t CameraHardware::startPreviewLocked()
     }
 
 
-    if (mPreviewThread != 0) {
+    if (mPreviewThread) {
         ALOGD("startPreviewLocked: preview already running");
         return NO_ERROR;
     }
@@ -710,7 +710,7 @@ status_t CameraHardware::startPreviewLocked()
     }
 
     ALOGD("startPreviewLocked: starting the preview thread");
-    mPreviewThread = new PreviewThread(this);
+    mPreviewThread = mkRef<PreviewThread>(this);
 
     ALOGD("startPreviewLocked: done");
     return NO_ERROR;
@@ -732,9 +732,9 @@ void CameraHardware::stopPreviewLocked()
 {
     //ALOGD("stopPreviewLocked");
 
-    if (mPreviewThread != 0) {
+    if (mPreviewThread) {
         mPreviewThread->requestExitAndWait();
-        mPreviewThread.clear();
+        mPreviewThread.reset();
 
         camera.StopStreaming();
         camera.Uninit();
@@ -754,12 +754,12 @@ void CameraHardware::stopPreview()
 
 
 
-int CameraHardware::isPreviewEnabled()
+bool CameraHardware::isPreviewEnabled()
 {
-    int enabled = 0;
+    bool enabled = false;
     {
         Mutex::Autolock lock(mLock);
-        enabled = (mPreviewThread != 0);
+        enabled = mPreviewThread;
     }
 
     ALOGD("isPreviewEnabled: %d", enabled);
@@ -1024,7 +1024,7 @@ status_t CameraHardware::sendCommand(int32_t command, int32_t arg1, int32_t arg2
 void CameraHardware::releaseCamera()
 {
     ALOGD("releaseCamera");
-    if (mPreviewThread != 0) {
+    if (mPreviewThread) {
         stopPreview();
     }
 }
@@ -1430,7 +1430,7 @@ void CameraHardware::initHeapLocked()
         if (mRawPreviewWidth != video_width || mRawPreviewHeight != video_height) {
 
             // Stop the preview thread if needed
-            if (mPreviewThread != 0) {
+            if (mPreviewThread) {
                 restart_preview = true;
                 stopPreviewLocked();
                 ALOGD("Stopping preview to allow changes");
@@ -1449,7 +1449,7 @@ void CameraHardware::initHeapLocked()
             mRawPreviewHeight != preview_height) {
 
             // Stop the preview thread if needed
-            if (mPreviewThread != 0) {
+            if (mPreviewThread) {
                 restart_preview = true;
                 stopPreviewLocked();
                 ALOGD("Stopping preview to allow changes");
@@ -1464,7 +1464,7 @@ void CameraHardware::initHeapLocked()
     if (how_raw_preview_big != mRawPreviewFrameSize) {
 
         // Stop the preview thread if needed
-        if (!restart_preview && mPreviewThread != 0) {
+        if (!restart_preview && mPreviewThread) {
             restart_preview = true;
             stopPreviewLocked();
             ALOGD("Stopping preview to allow changes");
@@ -1530,7 +1530,7 @@ void CameraHardware::initHeapLocked()
     if (how_preview_big != mPreviewFrameSize) {
 
         // Stop the preview thread if needed
-        if (!restart_preview && mPreviewThread != 0) {
+        if (!restart_preview && mPreviewThread) {
             restart_preview = true;
             stopPreviewLocked();
             ALOGD("Stopping preview to allow changes");
@@ -1599,7 +1599,7 @@ void CameraHardware::initHeapLocked()
     if (how_recording_big != mRecordingFrameSize) {
 
         // Stop the preview thread if needed
-        if (!restart_preview && mPreviewThread != 0) {
+        if (!restart_preview && mPreviewThread) {
             restart_preview = true;
             stopPreviewLocked();
             ALOGD("Stopping preview to allow changes");
@@ -2069,7 +2069,7 @@ int CameraHardware::pictureThread()
         }
 
         /* The camera application will restart preview ... */
-        if (mPreviewThread != 0) {
+        if (mPreviewThread) {
             stopPreviewLocked();
         }
 
