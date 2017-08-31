@@ -75,7 +75,7 @@ int CameraFactory::cameraDeviceOpen(const hw_module_t* module,int camera_id, hw_
 
     *device = NULL;
 
-    if (mCamera.isEmpty() || camera_id < 0 || camera_id >= getCameraNum()) {
+    if (mCamera.empty() || camera_id < 0 || camera_id >= getCameraNum()) {
         ALOGE("%s: Camera id %d is out of bounds (%d)", __FUNCTION__, camera_id, getCameraNum());
         return -EINVAL;
     }
@@ -124,9 +124,9 @@ int CameraFactory::parseConfig(const char* configFile)
 {
     ALOGD("parseConfig: configFile = %s", configFile);
 
-    auto text = utils::readFile(String8(configFile));
+    auto text = utils::readFile(configFile);
 
-    if (text.isEmpty()) {
+    if (text.empty()) {
         ALOGE("Cannot read the configuration file ");
         return UNKNOWN_ERROR;
     }
@@ -134,7 +134,7 @@ int CameraFactory::parseConfig(const char* configFile)
     for (auto& line : utils::splitLines(text)) {
         auto words = utils::splitWords(line);
 
-        if (words.isEmpty()) {
+        if (words.empty()) {
             continue;
         }
 
@@ -149,26 +149,26 @@ int CameraFactory::parseConfig(const char* configFile)
         if (cmd == "camera") {
             CameraSpec spec;
 
-            spec.facing = CAMERA_FACING_EXTERNAL;
-            spec.orientation = 0;
+            //spec.facing = CAMERA_FACING_EXTERNAL;
+            //spec.orientation = 0;
 
             while ((ix + 1) < words.size()) {
                 auto& opt = words[++ix];
 
                 if (opt == "-device" && (ix + 1) < words.size()) {
                     auto& dev = words[++ix];
-                    ALOGD("parseConfig: device = %s", dev.string());
+                    ALOGD("parseConfig: device = %s", dev.c_str());
 
-                    if (!dev.isEmpty()) {
+                    if (!dev.empty()) {
                         spec.devices.push_back(dev);
                     }
                 } else if (opt == "-res" && (ix + 1) < words.size()) {
                     auto& res = words[++ix];
                     int w, h;
 
-                    ALOGD("parseConfig: resolution = %s", res.string());
+                    ALOGD("parseConfig: resolution = %s", res.c_str());
 
-                    if (sscanf(res.string(), "%dx%d", &w, &h) == 2) {
+                    if (sscanf(res.c_str(), "%dx%d", &w, &h) == 2) {
                         spec.defaultSize = SurfaceSize(w, h);
                     }
                 } else if (opt == "-role" && (ix + 1) < words.size()) {
@@ -186,7 +186,7 @@ int CameraFactory::parseConfig(const char* configFile)
             mCamera.push_back(mkRef<CameraHardware>(spec));
 
         } else {
-            ALOGD("Unrecognized config line '%s'", line.string());
+            ALOGD("Unrecognized config line '%s'", line.c_str());
         }
     }
 

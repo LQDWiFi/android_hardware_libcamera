@@ -22,20 +22,21 @@
 #include <system/camera_metadata.h>
 #include <hardware/camera.h>
 #include <utils/threads.h>
-#include <utils/String8.h>
-#include <utils/Vector.h>
 #include "SurfaceSize.h"
 #include "V4L2Camera.h"
 #include "Utils.h"
+
+#include <vector>
+#include <string>
 
 namespace android {
 
 struct CameraSpec
 {
-    Vector<String8>     devices;
+    std::vector<std::string> devices;
     SurfaceSize         defaultSize;
-    int                 facing;         // CAMERA_FACING_FRONT et al
-    int                 orientation;    // 0, 90, 180, 270
+    int                 facing = CAMERA_FACING_EXTERNAL;
+    int                 orientation = 0;    // 0, 90, 180, 270
 };
 
 
@@ -309,7 +310,7 @@ private:
 
     /*  This will be set by the Hotplug thread when it finds the camera.
     */
-    String8             mVideoDevice;
+    std::string         mVideoDevice;
 
     // This is used to wait for mReady to become true.
     Condition           mReadyCond;
@@ -349,8 +350,8 @@ private:
     bool                mRecordingEnabled;
 
     // protected by mLock
-    Ref<PreviewThread>  mPreviewThread;
-    Ref<HotPlugThread>  mHotPlugThread;
+    sp<PreviewThread>   mPreviewThread;
+    sp<HotPlugThread>   mHotPlugThread;
 
     camera_notify_callback      mNotifyCb;
     camera_data_callback        mDataCb;

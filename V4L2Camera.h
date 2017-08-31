@@ -14,10 +14,11 @@
 #include <binder/MemoryBase.h>
 #include <binder/MemoryHeapBase.h>
 #include <utils/SortedVector.h>
-#include <utils/String8.h>
 #include <utils/Timers.h>
 #include "uvc_compat.h"
 #include "SurfaceDesc.h"
+
+#include <string>
 
 namespace android {
 
@@ -50,7 +51,7 @@ public:
     V4L2Camera();
     ~V4L2Camera();
 
-    int  Open(const String8& device, const SurfaceSize& preferred);
+    int  Open(const std::string& device, const SurfaceSize& preferred);
     void Close();
 
     int  Init(int width, int height, int fps);

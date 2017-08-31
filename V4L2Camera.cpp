@@ -27,6 +27,8 @@ extern "C" {
 #include "Utils.h"
 #include "Converter.h"
 
+using namespace std;
+
 #define HEADERFRAME1 0xaf
 
 #define DEBUG_FRAME 0
@@ -53,7 +55,7 @@ V4L2Camera::~V4L2Camera()
 
 
 
-int V4L2Camera::Open(const String8& device, const SurfaceSize& preferred)
+int V4L2Camera::Open(const string& device, const SurfaceSize& preferred)
 {
     int ret;
 
@@ -62,10 +64,10 @@ int V4L2Camera::Open(const String8& device, const SurfaceSize& preferred)
 
     memset(videoIn, 0, sizeof (struct vdIn));
 
-    if ((fd = open(device.string(), O_RDWR | O_NOCTTY)) == -1) {
+    if ((fd = open(device.c_str(), O_RDWR | O_NOCTTY)) == -1) {
         // We expect to try various paths until one is found. ENOENT is not a useful complaint.
         if (errno != ENOENT) {
-            ALOGE("ERROR opening V4L interface %s: %s", device.string(), strerror(errno));
+            ALOGE("ERROR opening V4L interface %s: %s", device.c_str(), strerror(errno));
         }
         return -1;
     }

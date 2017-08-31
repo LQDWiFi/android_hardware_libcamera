@@ -21,9 +21,10 @@
 #include <hardware/hardware.h>
 #include <hardware/camera.h>
 #include <utils/Singleton.h>
-#include <utils/Vector.h>
 #include "CameraHardware.h"
 #include "Utils.h"
+
+#include <vector>
 
 namespace android {
 
@@ -103,7 +104,7 @@ private:
 
 private:
     /* Camera hardware */
-    Vector<Ref<CameraHardware>> mCamera;
+    std::vector<Ref<CameraHardware>> mCamera;
 
 public:
     /* Contains device open entry point, as required by HAL API. */
