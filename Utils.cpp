@@ -41,6 +41,7 @@
 
 #include "Utils.h"
 #include <errno.h>
+#include <dirent.h>
 #include <malloc.h>
 
 #include <cstring>
@@ -1378,6 +1379,19 @@ StringVec splitWords(const string& text)
 
 
 
+bool contains(const StringVec& words, const std::string& word)
+{
+    for (auto& w : words) {
+        if (w == word) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+
+
 string readFile(const string& path)
 {
     string result;
@@ -1414,6 +1428,43 @@ string readFile(const string& path)
 
     if (error) {
         return "";
+    }
+
+    return result;
+}
+
+
+
+StringVec listVideos()
+{
+    StringVec result;
+    string    path = "/dev";
+
+    if (auto* dir = opendir(path.c_str())) {
+        auto name_max = pathconf(path.c_str(), _PC_NAME_MAX);
+
+        if (name_max == -1) {       /* Limit not defined, or error */
+            name_max = 255;         /* Take a guess */
+        }
+        auto len = offsetof(struct dirent, d_name) + name_max + 1;
+
+        dirent* entry = (dirent*)malloc(len);
+        dirent* found;
+
+        for (;;) {
+            readdir_r(dir, entry, &found);
+
+            if (!found) {
+                break;
+            }
+
+            if (strncmp(found->d_name, "video", 5) == 0) {
+                result.push_back(path + "/" + found->d_name);
+            }
+        }
+
+        free(entry);
+        closedir(dir);
     }
 
     return result;

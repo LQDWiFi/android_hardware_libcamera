@@ -22,14 +22,10 @@
 #define LOG_NDEBUG 0
 #define LOG_TAG "CameraFactory"
 
-/*  REVISIT either get this path from a property or get the config
-    as a string from the property.  The former would be better as property
-    values are limited in size.
-*/
-#define CONFIG_FILE "/etc/camera.cfg"
+// REVISIT
+#define FORCE_PEBBLE
 
 #include "CameraFactory.h"
-#include "Utils.h"
 
 #include <cutils/log.h>
 #include <cutils/properties.h>
@@ -49,9 +45,20 @@ CameraFactory::CameraFactory()
     ALOGD("CameraFactory");
 
     /*  The camera service will be calling getCameraInfo early, even before the
-        camera device is opened.  We must have the CameraHardware objects in place.
+        camera device is opened.  It doesn't cope with the suite of cameras changing
+        after it starts.  We must pretend to already have the CameraHardware object.
+
+        However if the property is omitted then we pretend to have no cameras.
     */
-    parseConfig(CONFIG_FILE);
+
+    char configFile[PROPERTY_VALUE_MAX];
+
+    if (property_get("camera.config_file", configFile, "")) {
+        parseConfig(configFile);
+    }
+#ifdef FORCE_PEBBLE
+    else parseConfig("/etc/camera.cfg");
+#endif
 }
 
 
@@ -88,7 +95,7 @@ int CameraFactory::cameraDeviceOpen(const hw_module_t* module,int camera_id, hw_
 /* Returns the number of available cameras */
 int CameraFactory::getCameraNum()
 {
-    ALOGD("getCameraNum: %d", mCamera.size());
+    ALOGD("getCameraNum: %lu", mCamera.size());
     return mCamera.size();
 }
 
@@ -99,7 +106,7 @@ int CameraFactory::getCameraInfo(int camera_id, struct camera_info* info)
     /*  This will be called early by the camera service. The CameraHardware
         objects must already be created.
     */
-    ALOGD("getCameraInfo: id = %d, info = %p", camera_id, info);
+    ALOGD("getCameraInfo: id = %d", camera_id);
 
     if (camera_id < 0 || camera_id >= getCameraNum()) {
         ALOGE("%s: Camera id %d is out of bounds (%d)", __FUNCTION__, camera_id, getCameraNum());
@@ -112,17 +119,20 @@ int CameraFactory::getCameraInfo(int camera_id, struct camera_info* info)
 
 
 /*  Parse a simple configuration file
-    Each line describes one CameraHardware object. There are shell-like
-    options on the line:
-        camera options...
-    where the options are:
-        -device FILE        : a device file to open. There can be more than one of these.
-        -res 1920x1080      : the default resolution to use
-        -role [front|back|other]  : defaults to other for the USB camera
+
+    The camera device nodes that will be scanned include all of the /dev/video* devices
+    and those mentioned in device lines but excluding those in nodevice lines.
+
+    nodevice PATH
+    device PATH
+    resolution 1920x1080      : the default resolution to use
+    role [front|back|other]   : defaults to other for the USB camera
 */
 int CameraFactory::parseConfig(const char* configFile)
 {
     ALOGD("parseConfig: configFile = %s", configFile);
+
+    CameraSpec spec;
 
     auto text = utils::readFile(configFile);
 
@@ -138,57 +148,45 @@ int CameraFactory::parseConfig(const char* configFile)
             continue;
         }
 
-        size_t ix = 0;
-        auto cmd = words[ix];
+        auto cmd = words[0];
 
         if (cmd[0] == '#') {
             // A comment line
             continue;
         }
 
-        if (cmd == "camera") {
-            CameraSpec spec;
+        if (cmd == "device" && words.size() == 2) {
+            auto& dev = words[1];
+            ALOGD("parseConfig: device = %s", dev.c_str());
+            spec.devices.push_back(dev);
+        } else if (cmd == "nodevice" && words.size() == 2) {
+            auto& dev = words[1];
+            ALOGD("parseConfig: nodevice = %s", dev.c_str());
+            spec.nodevices.push_back(dev);
+        } else if (cmd == "resolution" && words.size() == 2) {
+            auto& res = words[1];
+            int w, h;
 
-            //spec.facing = CAMERA_FACING_EXTERNAL;
-            //spec.orientation = 0;
+            ALOGD("parseConfig: resolution = %s", res.c_str());
 
-            while ((ix + 1) < words.size()) {
-                auto& opt = words[++ix];
-
-                if (opt == "-device" && (ix + 1) < words.size()) {
-                    auto& dev = words[++ix];
-                    ALOGD("parseConfig: device = %s", dev.c_str());
-
-                    if (!dev.empty()) {
-                        spec.devices.push_back(dev);
-                    }
-                } else if (opt == "-res" && (ix + 1) < words.size()) {
-                    auto& res = words[++ix];
-                    int w, h;
-
-                    ALOGD("parseConfig: resolution = %s", res.c_str());
-
-                    if (sscanf(res.c_str(), "%dx%d", &w, &h) == 2) {
-                        spec.defaultSize = SurfaceSize(w, h);
-                    }
-                } else if (opt == "-role" && (ix + 1) < words.size()) {
-                    auto& role = words[++ix];
-
-                    if (role == "front") {
-                        spec.facing = CAMERA_FACING_FRONT;
-                    } else if (role == "back") {
-                        spec.facing = CAMERA_FACING_BACK;
-                    }
-                }
+            if (sscanf(res.c_str(), "%dx%d", &w, &h) == 2) {
+                spec.defaultSize = SurfaceSize(w, h);
             }
+        } else if (cmd == "role" && words.size() == 2) {
+            auto& role = words[1];
 
-            // Create the camera entry
-            mCamera.push_back(mkRef<CameraHardware>(spec));
-
+            if (role == "front") {
+                spec.facing = CAMERA_FACING_FRONT;
+            } else if (role == "back") {
+                spec.facing = CAMERA_FACING_BACK;
+            }
         } else {
             ALOGD("Unrecognized config line '%s'", line.c_str());
         }
     }
+
+    // Create the camera entry
+    mCamera.push_back(mkRef<CameraHardware>(spec));
 
     return NO_ERROR;
 }

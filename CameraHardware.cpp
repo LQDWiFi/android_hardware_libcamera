@@ -27,8 +27,9 @@
 
 #include <utils/Log.h>
 #include <cutils/properties.h>
-#include <fcntl.h>
-#include <sys/mman.h>
+
+//#include <fcntl.h>
+//#include <sys/mman.h>
 #include <sys/stat.h> /* for mode definitions */
 #include <unistd.h> /* for sleep */
 
@@ -150,8 +151,6 @@ using namespace std;
 #define PIXEL_FORMAT_YV16  0x36315659 /* YCrCb 4:2:2 Planar */
 #endif
 
-// File to control camera power
-#define CAMERA_POWER_FILE  "camera.power_file"
 
 namespace android {
 //======================================================================
@@ -216,9 +215,6 @@ CameraHardware::CameraHardware(const CameraSpec& spec)
     ops = &mDeviceOps;
     priv = this;
 
-    // Power on camera
-    // PowerOn();
-
     // Load some initial default parmeters
     // We can skip the lock in the constructor.
     FromCamera fc;
@@ -274,78 +270,6 @@ CameraHardware::~CameraHardware()
         free_camera_metadata(mCameraMetadata);
         mCameraMetadata = NULL;
     }
-
-    // Power off camera
-    //PowerOff();
-}
-
-
-
-bool CameraHardware::PowerOn()
-{
-    ALOGD("PowerOn: Power ON camera.");
-
-    mCameraPowerFile = new char[PROPERTY_VALUE_MAX];
-
-    if (!property_get(CAMERA_POWER_FILE, mCameraPowerFile, "")) {
-        ALOGD("PowerOn: no power_file set");
-        delete [] mCameraPowerFile;
-        mCameraPowerFile = 0;
-        return true;
-    }
-
-    // power on camera
-    int handle = ::open(mCameraPowerFile,O_RDWR);
-    if (handle >= 0) {
-        ::write(handle,"1\n",2);
-        ::close(handle);
-    } else {
-        ALOGE("Could not open %s for writing.", mCameraPowerFile);
-        return false;
-    }
-#if 0
-    // Wait until the camera is recognized or timed out
-    int timeOut = 500;
-    do {
-        // Try to open the video capture device
-        handle = ::open(mVideoDevice.c_str(),O_RDWR);
-        if (handle >= 0)
-            break;
-        // Wait a bit
-        ::usleep(10000);
-    } while (--timeOut > 0);
-
-    if (handle >= 0) {
-        ALOGD("Camera powered on");
-        ::close(handle);
-        return true;
-    } else {
-        ALOGE("Unable to power camera");
-    }
-#endif
-    return false;
-}
-
-
-
-bool CameraHardware::PowerOff()
-{
-    ALOGD("CameraHardware::PowerOff: Power OFF camera.");
-
-    if (!mCameraPowerFile)
-        return true;
-    // power on camera
-    int handle = ::open(mCameraPowerFile,O_RDWR);
-    if (handle >= 0) {
-        ::write(handle,"0\n",2);
-        ::close(handle);
-    } else {
-        ALOGE("Could not open %s for writing.", mCameraPowerFile);
-        return false;
-    }
-    delete [] mCameraPowerFile;
-    mCameraPowerFile = 0;
-    return true;
 }
 
 
@@ -393,9 +317,7 @@ CameraHardware::HotPlugThread::HotPlugThread(CameraHardware* hw)
 
 void CameraHardware::HotPlugThread::onFirstRef()
 {
-    if (!mHardware->mSpec.devices.empty()) {
-        run("CameraHotPlugThread", PRIORITY_BACKGROUND);
-    }
+    run("CameraHotPlugThread", PRIORITY_BACKGROUND);
 }
 
 
@@ -457,30 +379,26 @@ status_t CameraHardware::getCameraInfo(struct camera_info* info)
 
 status_t CameraHardware::setPreviewWindow(struct preview_stream_ops* window)
 {
-    ALOGD("setPreviewWindow: preview_stream_ops: %p", window);
-    {
-        Mutex::Autolock lock(mLock);
+    Mutex::Autolock lock(mLock);
 
-        if (window != NULL) {
-            /* The CPU will write each frame to the preview window buffer.
-             * Note that we delay setting preview window buffer geometry until
-             * frames start to come in. */
-            status_t res = window->set_usage(window, GRALLOC_USAGE_SW_WRITE_OFTEN);
-            if (res != NO_ERROR) {
-                res = -res; // set_usage returns a negative errno.
-                ALOGE("setPreviewWindow: Error setting preview window usage %d -> %s", res, strerror(res));
-                return res;
-            }
+    if (window != NULL) {
+        /* The CPU will write each frame to the preview window buffer.
+         * Note that we delay setting preview window buffer geometry until
+         * frames start to come in. */
+        status_t res = window->set_usage(window, GRALLOC_USAGE_SW_WRITE_OFTEN);
+        if (res != NO_ERROR) {
+            res = -res; // set_usage returns a negative errno.
+            ALOGE("setPreviewWindow: Error setting preview window usage %d -> %s", res, strerror(res));
+            return res;
         }
+    }
 
-        mWin = window;
+    mWin = window;
 
-        // setup the preview window geometry to be able to use the full preview window
-        if (mPreviewThread != 0 && mWin != 0) {
-            ALOGD("setPreviewWindow - Negotiating preview format");
-            NegotiatePreviewFormat(mWin);
-        }
-
+    // setup the preview window geometry to be able to use the full preview window
+    if (mPreviewThread != 0 && mWin != 0) {
+        ALOGD("setPreviewWindow - Negotiating preview format");
+        NegotiatePreviewFormat(mWin);
     }
 
     return NO_ERROR;
@@ -494,8 +412,6 @@ void CameraHardware::setCallbacks(camera_notify_callback notify_cb,
                                   camera_request_memory get_memory,
                                   void* user)
 {
-    ALOGD("setCallbacks");
-
     Mutex::Autolock lock(mLock);
 
     mNotifyCb = notify_cb;
@@ -761,7 +677,7 @@ bool CameraHardware::isPreviewEnabled()
     bool enabled = false;
     {
         Mutex::Autolock lock(mLock);
-        enabled = mPreviewThread != 0;
+        enabled = (mPreviewThread != 0);
     }
 
     ALOGD("isPreviewEnabled: %d", enabled);
@@ -1049,41 +965,64 @@ bool CameraHardware::tryOpenCamera()
     /*  This will be called from the hotplug thread to try to
         open the video file.  It may take a long time for the camera to
         be enumerated.
+
+        We scan all of the /dev/video* files but exclude those in mSpec.nodevices.
+        We also include mSpec.devices if they haven't already been looked at.
         
         This returns true if the parameters are set.
-
-        REVISIT - take into account the mSpec preferred size
     */
     FromCamera fc;
     bool       ok = false;
     string     device;
 
-    for (auto& videoFile : mSpec.devices) {
+    //ALOGD("tryOpenCamera");
+
+    auto videos = utils::listVideos();
+#if 0
+    for (auto& v : videos) {
+        ALOGD("tryOpenCamera: video %s", v.c_str());
+    }
+#endif
+    for (auto& d : mSpec.devices) {
+        if (!utils::contains(videos, d)) {
+            videos.push_back(d);
+        }
+    }
+
+    for (auto& videoFile : videos) {
+
+        if (utils::contains(mSpec.nodevices, videoFile)) {
+            ALOGD("tryOpenCamera: skipping %s", videoFile.c_str());
+            continue;
+        }
+
         ALOGD("tryOpenCamera: trying %s", videoFile.c_str());
 
-        if (camera.Open(videoFile, mSpec.defaultSize) == NO_ERROR) {
+        if (camera.Detect(videoFile)) {
+            if (camera.Open(videoFile, mSpec.defaultSize) == NO_ERROR) {
 
-            ALOGI("opened %s", videoFile.c_str());
+                ALOGI("opened %s", videoFile.c_str());
 
-            device = videoFile;
-            ok     = true;
+                device = videoFile;
+                ok     = true;
 
-            // Get the default preview format
-            fc.pw = camera.getBestPreviewFmt().getWidth();
-            fc.ph = camera.getBestPreviewFmt().getHeight();
-            fc.pfps = camera.getBestPreviewFmt().getFps();
+                // Get the default preview format
+                fc.pw = camera.getBestPreviewFmt().getWidth();
+                fc.ph = camera.getBestPreviewFmt().getHeight();
+                fc.pfps = camera.getBestPreviewFmt().getFps();
 
-            // Get the default picture format
-            fc.fw = camera.getBestPictureFmt().getWidth();
-            fc.fh = camera.getBestPictureFmt().getHeight();
+                // Get the default picture format
+                fc.fw = camera.getBestPictureFmt().getWidth();
+                fc.fh = camera.getBestPictureFmt().getHeight();
 
-            // Get all the available sizes
-            fc.avSizes = camera.getAvailableSizes();
+                // Get all the available sizes
+                fc.avSizes = camera.getAvailableSizes();
 
-            // Get all the available Fps
-            fc.avFps = camera.getAvailableFps();
+                // Get all the available Fps
+                fc.avFps = camera.getAvailableFps();
 
-            break;
+                break;
+            }
         }
     }
 

@@ -51,6 +51,7 @@ public:
     V4L2Camera();
     ~V4L2Camera();
 
+    bool Detect(const std::string& device);
     int  Open(const std::string& device, const SurfaceSize& preferred);
     void Close();
 
@@ -85,7 +86,7 @@ private:
 
 private:
     struct vdIn *videoIn;
-    int fd;
+    int vfd;
 
     SortedVector<SurfaceDesc> m_AllFmts;        // Available video modes
     SurfaceDesc m_BestPreviewFmt;               // Best preview mode. maximum fps with biggest frame

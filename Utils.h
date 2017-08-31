@@ -48,6 +48,8 @@
 #include <vector>
 #include <string>
 
+typedef std::vector<std::string> StringVec;
+
 //======================================================================
 /*  Shorthands for shared_ptr.
 */
@@ -88,8 +90,6 @@ int jpeg_decode(uint8_t *pic,int stride, uint8_t *buf, int width, int height);
 #define ERR_DEPTH_MISMATCH 15
 
 
-typedef std::vector<std::string> StringVec;
-
 // These are easier to use than the Tokenizer class.
 
 /*  Split text into lines. The new-lines are omitted.
@@ -102,11 +102,20 @@ extern StringVec splitLines(const std::string& text);
 extern StringVec splitWords(const std::string& text);
 
 
+/*  See if the vector contains the word.
+*/
+extern bool contains(const StringVec& words, const std::string& word);
+
+
 /*  Read all of a file.  Returns empty if the file could
     not be found.
 */
 extern std::string readFile(const std::string& path);
 
+
+/*  This lists all /dev/video* device files.
+*/
+extern StringVec listVideos();
 
 //======================================================================
 }  // namespace utils

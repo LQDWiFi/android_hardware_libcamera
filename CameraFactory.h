@@ -17,7 +17,6 @@
 #ifndef HW_CAMERA_CAMERA_FACTORY_H
 #define HW_CAMERA_CAMERA_FACTORY_H
 
-#include <string.h>
 #include <hardware/hardware.h>
 #include <hardware/camera.h>
 #include <utils/Singleton.h>
@@ -27,30 +26,18 @@
 #include <vector>
 
 namespace android {
+//======================================================================
 
-/*
- * Contains declaration of a class CameraFactory that manages cameras
- * available for the emulation. A global instance of this class is statically
- * instantiated and initialized when camera emulation HAL is loaded.
- */
+/*  This simplified HAL only supports one camera using the uvcvideo driver.
 
-/* Class CameraFactoryManages cameras available.
- *
- * When the global static instance of this class is created on the module load,
- * it enumerates cameras available for the emulation by connecting to the
- * emulator's 'camera' service. For every camera found out there it creates an
- * instance of an appropriate class, and stores it an in array of emulated
- * cameras. In addition to the cameras reported by the emulator, a fake camera
- * emulator is always created, so there is always at least one camera that is
- * available.
- *
- * Instance of this class is also used as the entry point for the camera HAL API,
- * including:
- *  - hw_module_methods_t::open entry point
- *  - camera_module_t::get_number_of_cameras entry point
- *  - camera_module_t::get_camera_info entry point
- *
- */
+    Instance of this class is also used as the entry point for the camera HAL API,
+    including:
+     - hw_module_methods_t::open entry point
+     - camera_module_t::get_number_of_cameras entry point
+     - camera_module_t::get_camera_info entry point
+ 
+*/
+
 class CameraFactory: public Singleton<CameraFactory> {
 public:
     /* Constructs CameraFactory instance.
@@ -67,7 +54,6 @@ public:
      * Camera HAL API handlers.
      ***************************************************************************/
 
-public:
     /* Opens (connects to) a camera device.
      * This method is called in response to hw_module_methods_t::open callback.
      */
@@ -85,12 +71,14 @@ public:
      * Camera HAL API callbacks.
      ***************************************************************************/
 
-public:
     /* camera_module_t::get_number_of_cameras callback entry point. */
     static int get_number_of_cameras(void);
 
     /* camera_module_t::get_camera_info callback entry point. */
     static int get_camera_info(int camera_id, struct camera_info *info);
+
+    /* Contains device open entry point, as required by HAL API. */
+    static struct hw_module_methods_t   mCameraModuleMethods;
 
 private:
     friend class Singleton<CameraFactory>;
@@ -102,15 +90,11 @@ private:
 
     int parseConfig(const char* configFile);
 
-private:
     /* Camera hardware */
     std::vector<Ref<CameraHardware>> mCamera;
-
-public:
-    /* Contains device open entry point, as required by HAL API. */
-    static struct hw_module_methods_t   mCameraModuleMethods;
 };
 
+//======================================================================
 }; /* namespace android */
 
 #endif  /* HW_EMULATOR_CAMERA_EMULATED_CAMERA_FACTORY_H */

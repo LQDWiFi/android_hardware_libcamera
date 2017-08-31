@@ -33,10 +33,11 @@ namespace android {
 
 struct CameraSpec
 {
-    std::vector<std::string> devices;
-    SurfaceSize         defaultSize;
-    int                 facing = CAMERA_FACING_EXTERNAL;
-    int                 orientation = 0;    // 0, 90, 180, 270
+    StringVec       devices;            // devices to force
+    StringVec       nodevices;          // devices to skip
+    SurfaceSize     defaultSize;
+    int             facing = CAMERA_FACING_EXTERNAL;
+    int             orientation = 0;    // 0, 90, 180, 270
 };
 
 
@@ -200,8 +201,6 @@ public:
 
 private:
 
-    bool PowerOn();
-    bool PowerOff();
     bool NegotiatePreviewFormat(struct preview_stream_ops* win);
     nsecs_t frameTimeout();
 
