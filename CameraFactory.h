@@ -86,8 +86,6 @@ private:
                            const char* name,
                            hw_device_t** device);
 
-    int parseConfig(const char* configFile);
-
     /* Camera hardware */
     std::vector<Ref<CameraHardware>> mCamera;
 };

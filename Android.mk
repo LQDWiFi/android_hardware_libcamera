@@ -13,6 +13,7 @@ LOCAL_SRC_FILES := \
 	CameraFactory.cpp \
 	CameraHal.cpp \
 	CameraHardware.cpp \
+	CameraSpec.cpp \
 	Converter.cpp \
 	Metadata.cpp \
 	SurfaceDesc.cpp \

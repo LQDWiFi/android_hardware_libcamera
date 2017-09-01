@@ -74,6 +74,10 @@ using namespace std;
     The mutex allows it to communicate the ready status to the
     Android thread.
 
+    The hotplug thread doesn't start doing stuff until the camera.enable
+    property is set.  This allows an AppOS service to trigger the
+    camera system.
+
 */
 
 #define ARRAY_SIZE(a) (sizeof(a) / sizeof(a[0]))
@@ -309,7 +313,8 @@ bool CameraHardware::NegotiatePreviewFormat(struct preview_stream_ops* win)
 
 CameraHardware::HotPlugThread::HotPlugThread(CameraHardware* hw)
   : mHardware   (hw),
-    mCheckCount (0)
+    mCheckCount (0),
+    mStarted    (false)
 {
 }
 
@@ -326,6 +331,15 @@ bool CameraHardware::HotPlugThread::threadLoop()
 {
     /*  The thread will be terminated after the camera has been opened.
     */
+    if (!mStarted) {
+        mStarted = property_get_bool("camera.enable", false);
+
+        if (!mStarted) {
+            // Try again later
+            return true;
+        }
+    }
+
     auto ok = mHardware->tryOpenCamera();
 
     if (!ok) {

@@ -52,8 +52,8 @@ static int my_abs(int x)
 //======================================================================
 
 V4L2Camera::V4L2Camera ()
-  : vfd(-1),
-    haveEnumerated(false)
+  : haveEnumerated(false),
+    vfd(-1)
 {
     videoIn = (struct vdIn *) calloc (1, sizeof (struct vdIn));
 }

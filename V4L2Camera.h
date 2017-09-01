@@ -19,23 +19,13 @@
 
 #include "Utils.h"
 #include "uvc_compat.h"
+#include "CameraSpec.h"
 #include "SurfaceDesc.h"
 
 namespace android {
 //======================================================================
 
 static const int MaxPreviewWidth = 1920;    // a hack for certain cameras
-
-
-struct CameraSpec
-{
-    StringVec       devices;            // devices to force
-    StringVec       nodevices;          // devices to skip
-    SurfaceSize     preferredSize;
-    int             facing = CAMERA_FACING_EXTERNAL;
-    int             orientation = 0;    // 0, 90, 180, 270
-};
-
 
 struct vdIn {
     struct v4l2_capability cap;

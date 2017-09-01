@@ -24,6 +24,7 @@
 #include <utils/threads.h>
 
 #include "Utils.h"
+#include "CameraSpec.h"
 #include "SurfaceSize.h"
 #include "V4L2Camera.h"
 
@@ -273,6 +274,7 @@ private:
     {
         CameraHardware* mHardware;
         size_t          mCheckCount;
+        bool            mStarted;
 
     public:
         HotPlugThread(CameraHardware* hw);

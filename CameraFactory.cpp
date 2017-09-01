@@ -19,16 +19,12 @@
  * available
  */
 
-#define LOG_NDEBUG 0
 #define LOG_TAG "CameraFactory"
 
-// REVISIT
-#define FORCE_PEBBLE
+#define CONFIG_FILE "/etc/camera.cfg"
 
 #include "CameraFactory.h"
-
 #include <cutils/log.h>
-#include <cutils/properties.h>
 
 extern camera_module_t HAL_MODULE_INFO_SYM;
 
@@ -48,17 +44,13 @@ CameraFactory::CameraFactory()
         camera device is opened.  It doesn't cope with the suite of cameras changing
         after it starts.  We must pretend to already have the CameraHardware object.
 
-        However if the property is omitted then we pretend to have no cameras.
+        However if the configuration file cannot be read then we pretend to have no cameras.
     */
+    CameraSpec spec;
 
-    char configFile[PROPERTY_VALUE_MAX];
-
-    if (property_get("camera.config_file", configFile, "")) {
-        parseConfig(configFile);
+    if (spec.loadFromFile(CONFIG_FILE) == NO_ERROR) {
+        mCamera.push_back(mkRef<CameraHardware>(spec));
     }
-#ifdef FORCE_PEBBLE
-    else parseConfig("/etc/camera.cfg");
-#endif
 }
 
 
@@ -115,82 +107,6 @@ int CameraFactory::getCameraInfo(int camera_id, struct camera_info* info)
 
     return mCamera[camera_id]->getCameraInfo(info);
 }
-
-
-
-/*  Parse a simple configuration file
-
-    The camera device nodes that will be scanned include all of the /dev/video* devices
-    and those mentioned in device lines but excluding those in nodevice lines.
-
-    nodevice PATH
-    device PATH
-    resolution 1920x1080      : the default resolution to use
-    role [front|back|other]   : defaults to other for the USB camera
-*/
-int CameraFactory::parseConfig(const char* configFile)
-{
-    ALOGD("parseConfig: configFile = %s", configFile);
-
-    CameraSpec spec;
-
-    auto text = utils::readFile(configFile);
-
-    if (text.empty()) {
-        ALOGE("Cannot read the configuration file ");
-        return UNKNOWN_ERROR;
-    }
-
-    for (auto& line : utils::splitLines(text)) {
-        auto words = utils::splitWords(line);
-
-        if (words.empty()) {
-            continue;
-        }
-
-        auto cmd = words[0];
-
-        if (cmd[0] == '#') {
-            // A comment line
-            continue;
-        }
-
-        if (cmd == "device" && words.size() == 2) {
-            auto& dev = words[1];
-            ALOGD("parseConfig: device = %s", dev.c_str());
-            spec.devices.push_back(dev);
-        } else if (cmd == "nodevice" && words.size() == 2) {
-            auto& dev = words[1];
-            ALOGD("parseConfig: nodevice = %s", dev.c_str());
-            spec.nodevices.push_back(dev);
-        } else if (cmd == "resolution" && words.size() == 2) {
-            auto& res = words[1];
-            int w, h;
-
-            ALOGD("parseConfig: resolution = %s", res.c_str());
-
-            if (sscanf(res.c_str(), "%dx%d", &w, &h) == 2) {
-                spec.preferredSize = SurfaceSize(w, h);
-            }
-        } else if (cmd == "role" && words.size() == 2) {
-            auto& role = words[1];
-
-            if (role == "front") {
-                spec.facing = CAMERA_FACING_FRONT;
-            } else if (role == "back") {
-                spec.facing = CAMERA_FACING_BACK;
-            }
-        } else {
-            ALOGD("Unrecognized config line '%s'", line.c_str());
-        }
-    }
-
-    // Create the camera entry
-    mCamera.push_back(mkRef<CameraHardware>(spec));
-
-    return NO_ERROR;
-}
-
 
 
 /****************************************************************************
