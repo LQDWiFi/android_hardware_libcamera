@@ -24,8 +24,6 @@ int CameraSpec::loadFromFile(const char* configFile)
 {
     ALOGD("loadFromFile: configFile = %s", configFile);
 
-    CameraSpec spec;
-
     auto text = utils::readFile(configFile);
 
     if (text.empty()) {
@@ -50,11 +48,11 @@ int CameraSpec::loadFromFile(const char* configFile)
         if (cmd == "device" && words.size() == 2) {
             auto& dev = words[1];
             ALOGD("loadFromFile: device = %s", dev.c_str());
-            spec.devices.push_back(dev);
+            devices.push_back(dev);
         } else if (cmd == "nodevice" && words.size() == 2) {
             auto& dev = words[1];
             ALOGD("loadFromFile: nodevice = %s", dev.c_str());
-            spec.nodevices.push_back(dev);
+            nodevices.push_back(dev);
         } else if (cmd == "resolution" && words.size() == 2) {
             auto& res = words[1];
             int w, h;
@@ -62,15 +60,15 @@ int CameraSpec::loadFromFile(const char* configFile)
             ALOGD("loadFromFile: resolution = %s", res.c_str());
 
             if (sscanf(res.c_str(), "%dx%d", &w, &h) == 2) {
-                spec.preferredSize = SurfaceSize(w, h);
+                preferredSize = SurfaceSize(w, h);
             }
         } else if (cmd == "role" && words.size() == 2) {
             auto& role = words[1];
 
             if (role == "front") {
-                spec.facing = CAMERA_FACING_FRONT;
+                facing = CAMERA_FACING_FRONT;
             } else if (role == "back") {
-                spec.facing = CAMERA_FACING_BACK;
+                facing = CAMERA_FACING_BACK;
             }
         } else {
             ALOGD("Unrecognized config line '%s'", line.c_str());
