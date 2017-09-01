@@ -28,8 +28,6 @@
 #include <utils/Log.h>
 #include <cutils/properties.h>
 
-//#include <fcntl.h>
-//#include <sys/mman.h>
 #include <sys/stat.h> /* for mode definitions */
 #include <unistd.h> /* for sleep */
 
@@ -336,6 +334,7 @@ bool CameraHardware::HotPlugThread::threadLoop()
 
         if (!mStarted) {
             // Try again later
+            ::usleep(HotPlugCheckInterval * 1000 * 1000);
             return true;
         }
     }
