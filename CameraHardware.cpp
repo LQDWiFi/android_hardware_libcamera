@@ -585,7 +585,7 @@ status_t CameraHardware::startPreviewLocked()
 
     int fps = mParameters.getPreviewFrameRate();
 
-    status_t ret = camera.Open(mVideoDevice, mSpec.defaultSize);
+    status_t ret = camera.Open(mSpec);
     if (ret != NO_ERROR) {
         ALOGE("startPreviewLocked: Failed to initialize Camera");
         return ret;
@@ -966,80 +966,41 @@ bool CameraHardware::tryOpenCamera()
         open the video file.  It may take a long time for the camera to
         be enumerated.
 
-        We scan all of the /dev/video* files but exclude those in mSpec.nodevices.
-        We also include mSpec.devices if they haven't already been looked at.
-        
         This returns true if the parameters are set.
     */
-    FromCamera fc;
-    bool       ok = false;
-    string     device;
-
     //ALOGD("tryOpenCamera");
 
-    auto videos = utils::listVideos();
-#if 0
-    for (auto& v : videos) {
-        ALOGD("tryOpenCamera: video %s", v.c_str());
-    }
-#endif
-    for (auto& d : mSpec.devices) {
-        if (!utils::contains(videos, d)) {
-            videos.push_back(d);
-        }
-    }
+    FromCamera fc;
 
-    for (auto& videoFile : videos) {
+    if (camera.Open(mSpec) == NO_ERROR) {
+        // Get the default preview format
+        fc.pw = camera.getBestPreviewFmt().getWidth();
+        fc.ph = camera.getBestPreviewFmt().getHeight();
+        fc.pfps = camera.getBestPreviewFmt().getFps();
 
-        if (utils::contains(mSpec.nodevices, videoFile)) {
-            ALOGD("tryOpenCamera: skipping %s", videoFile.c_str());
-            continue;
-        }
+        // Get the default picture format
+        fc.fw = camera.getBestPictureFmt().getWidth();
+        fc.fh = camera.getBestPictureFmt().getHeight();
 
-        ALOGD("tryOpenCamera: trying %s", videoFile.c_str());
+        // Get all the available sizes
+        fc.avSizes = camera.getAvailableSizes();
 
-        if (camera.Detect(videoFile)) {
-            if (camera.Open(videoFile, mSpec.defaultSize) == NO_ERROR) {
+        // Get all the available Fps
+        fc.avFps = camera.getAvailableFps();
 
-                ALOGI("opened %s", videoFile.c_str());
-
-                device = videoFile;
-                ok     = true;
-
-                // Get the default preview format
-                fc.pw = camera.getBestPreviewFmt().getWidth();
-                fc.ph = camera.getBestPreviewFmt().getHeight();
-                fc.pfps = camera.getBestPreviewFmt().getFps();
-
-                // Get the default picture format
-                fc.fw = camera.getBestPictureFmt().getWidth();
-                fc.fh = camera.getBestPictureFmt().getHeight();
-
-                // Get all the available sizes
-                fc.avSizes = camera.getAvailableSizes();
-
-                // Get all the available Fps
-                fc.avFps = camera.getAvailableFps();
-
-                break;
-            }
-        }
-    }
-
-    if (!ok) {
+    } else {
         return false;
     }
 
     Mutex::Autolock lock(mLock);
 
     // Allow the preview thread to start
-    mReady       = true;
-    mVideoDevice = device;
+    mReady = true;
 
     /*  This will call setParametersLocked() which will
         start the preview thread.
     */
-    ok = fc.set(*this);
+    bool ok = fc.set(*this);
 
     // Signal that the camera is ready.
     mReadyCond.broadcast();
@@ -2016,7 +1977,7 @@ int CameraHardware::pictureThread()
 
         ALOGD("pictureThread: taking picture (%d x %d)", w, h);
 
-        if (camera.Open(mVideoDevice, mSpec.defaultSize) == NO_ERROR) {
+        if (camera.Open(mSpec) == NO_ERROR) {
             camera.Init(w, h, 1);
 
             /* Retrieve the real size being used */

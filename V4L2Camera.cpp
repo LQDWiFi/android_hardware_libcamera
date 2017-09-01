@@ -40,12 +40,25 @@ using namespace std;
 #endif
 
 namespace android {
+//======================================================================
+
+
+static int my_abs(int x)
+{
+    return (x < 0) ? -x : x;
+}
+
+
+//======================================================================
 
 V4L2Camera::V4L2Camera ()
-  : vfd(-1)
+  : vfd(-1),
+    haveEnumerated(false)
 {
     videoIn = (struct vdIn *) calloc (1, sizeof (struct vdIn));
 }
+
+
 
 V4L2Camera::~V4L2Camera()
 {
@@ -55,22 +68,70 @@ V4L2Camera::~V4L2Camera()
 
 
 
-bool V4L2Camera::Detect(const string& device)
+int V4L2Camera::Open(const CameraSpec& spec)
 {
-    bool ok = false;
-    auto fd = open(device.c_str(), O_RDWR | O_NOCTTY);
+    /* Close the previous instance, if any */
+    Close();
 
-    if (fd >= 0) {
+    if (!tryDevices(spec)) {
+        ALOGW("no camera device has been found");
+        return -1;
+    }
 
-        vdIn v;
-        memset(&v, 0, sizeof(v));
+    /*  Enumerate all available frame formats if we already done it.
+    */
+    if (!haveEnumerated) {
+        EnumFrameFormats(spec.preferredSize);
+        haveEnumerated = true;
+    }
 
-        if (ioctl(fd, VIDIOC_QUERYCAP, &v.cap) >= 0) {
-            ok = v.cap.capabilities & V4L2_CAP_VIDEO_CAPTURE &&
-                 v.cap.capabilities & V4L2_CAP_STREAMING;
+    ALOGD("Opened");
+    return NO_ERROR;
+}
+
+
+
+bool V4L2Camera::tryDevices(const CameraSpec& spec)
+{
+    /*  Try the last one first and then start searching.
+        If we return true then the camera is open on vfd and
+        the capabilities are in videoIn->cap
+    */
+
+    if (!lastDevice.empty() && tryOneDevice(lastDevice)) {
+        return true;
+    }
+
+    bool ok     = false;
+    auto videos = utils::listVideos();
+#if 0
+    for (auto& v : videos) {
+        ALOGD("tryDevices: video %s", v.c_str());
+    }
+#endif
+    // Import some we are asked to try
+    for (auto& d : spec.devices) {
+        if (!utils::contains(videos, d)) {
+            videos.push_back(d);
+        }
+    }
+
+    for (auto& v : videos) {
+        if (v == lastDevice) {
+            continue;               // already tried it
         }
 
-        close(fd);
+        if (utils::contains(spec.nodevices, v)) {
+            ALOGD("tryDevices: skipping %s", v.c_str());
+            continue;
+        }
+
+        if (tryOneDevice(v)) {
+            ok = true;
+            ALOGI("opened %s", v.c_str());
+            lastDevice = v;
+            break;
+        }
     }
 
     return ok;
@@ -78,54 +139,45 @@ bool V4L2Camera::Detect(const string& device)
 
 
 
-int V4L2Camera::Open(const string& device, const SurfaceSize& preferred)
+bool V4L2Camera::tryOneDevice(const string& device)
 {
-    int ret;
+    bool ok = false;
 
-    /* Close the previous instance, if any */
-    Close();
+    vfd = open(device.c_str(), O_RDWR | O_NOCTTY);
 
-    memset(videoIn, 0, sizeof (struct vdIn));
+    if (vfd >= 0) {
 
-    if ((vfd = open(device.c_str(), O_RDWR | O_NOCTTY)) == -1) {
-        // We expect to try various paths until one is found. ENOENT is not a useful complaint.
-        if (errno != ENOENT) {
-            ALOGE("ERROR opening V4L interface %s: %s", device.c_str(), strerror(errno));
+        memset(videoIn, 0, sizeof (struct vdIn));
+
+        if (ioctl(vfd, VIDIOC_QUERYCAP, &videoIn->cap) >= 0) {
+            ok = videoIn->cap.capabilities & V4L2_CAP_VIDEO_CAPTURE &&
+                 videoIn->cap.capabilities & V4L2_CAP_STREAMING;
         }
-        return -1;
     }
 
-    ret = ioctl (vfd, VIDIOC_QUERYCAP, &videoIn->cap);
-    if (ret < 0) {
-        ALOGE("Error opening device: unable to query device.");
-        return -1;
-    }
-
-    /* Enumerate all available frame formats */
-    EnumFrameFormats(preferred);
-
-    ALOGD("Opened");
-    return ret;
+    return ok;
 }
+
+
 
 void V4L2Camera::Close ()
 {
     /* Release the temporary buffer, if any */
-    if (videoIn->tmpBuffer)
+    if (videoIn->tmpBuffer) {
         free(videoIn->tmpBuffer);
-    videoIn->tmpBuffer = NULL;
+        videoIn->tmpBuffer = NULL;
+    }
 
     /* Close the file descriptor */
-    if (vfd > 0)
+    if (vfd > 0) {
         close(vfd);
-    vfd = -1;
+        vfd = -1;
+    }
+
     ALOGD("Closed");
 }
 
-static int my_abs(int x)
-{
-    return (x < 0) ? -x : x;
-}
+
 
 int V4L2Camera::Init(int width, int height, int fps)
 {
@@ -1099,4 +1151,5 @@ const SurfaceDesc& V4L2Camera::getBestPictureFmt() const
 }
 
 
+//======================================================================
 }; // namespace android

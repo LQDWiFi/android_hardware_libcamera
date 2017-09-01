@@ -22,24 +22,12 @@
 #include <system/camera_metadata.h>
 #include <hardware/camera.h>
 #include <utils/threads.h>
+
+#include "Utils.h"
 #include "SurfaceSize.h"
 #include "V4L2Camera.h"
-#include "Utils.h"
-
-#include <vector>
-#include <string>
 
 namespace android {
-
-struct CameraSpec
-{
-    StringVec       devices;            // devices to force
-    StringVec       nodevices;          // devices to skip
-    SurfaceSize     defaultSize;
-    int             facing = CAMERA_FACING_EXTERNAL;
-    int             orientation = 0;    // 0, 90, 180, 270
-};
-
 
 class CameraHardware : public camera_device {
 
@@ -306,10 +294,6 @@ private:
         parameters have been set from the camera.
     */
     bool                mReady;
-
-    /*  This will be set by the Hotplug thread when it finds the camera.
-    */
-    std::string         mVideoDevice;
 
     // This is used to wait for mReady to become true.
     Condition           mReadyCond;

@@ -13,16 +13,29 @@
 
 #include <binder/MemoryBase.h>
 #include <binder/MemoryHeapBase.h>
+#include <hardware/camera.h>
 #include <utils/SortedVector.h>
-#include <utils/Timers.h>
+#include <utils/Timers.h>               // for nsecs_t
+
+#include "Utils.h"
 #include "uvc_compat.h"
 #include "SurfaceDesc.h"
 
-#include <string>
-
 namespace android {
+//======================================================================
 
 static const int MaxPreviewWidth = 1920;    // a hack for certain cameras
+
+
+struct CameraSpec
+{
+    StringVec       devices;            // devices to force
+    StringVec       nodevices;          // devices to skip
+    SurfaceSize     preferredSize;
+    int             facing = CAMERA_FACING_EXTERNAL;
+    int             orientation = 0;    // 0, 90, 180, 270
+};
+
 
 struct vdIn {
     struct v4l2_capability cap;
@@ -45,14 +58,16 @@ struct vdIn {
 
 };
 
+
+//======================================================================
+
 class V4L2Camera {
 
 public:
     V4L2Camera();
     ~V4L2Camera();
 
-    bool Detect(const std::string& device);
-    int  Open(const std::string& device, const SurfaceSize& preferred);
+    int  Open(const CameraSpec& spec);
     void Close();
 
     int  Init(int width, int height, int fps);
@@ -68,7 +83,7 @@ public:
     status_t GrabRawFrame (void *frameBuffer, int maxSize, nsecs_t timeout);
 
     void getSize(int& width, int& height) const;
-    int getFps() const;
+    int  getFps() const;
 
     SortedVector<SurfaceSize> getAvailableSizes() const;
     SortedVector<int> getAvailableFps() const;
@@ -76,6 +91,8 @@ public:
     const SurfaceDesc& getBestPictureFmt() const;
 
 private:
+    bool tryDevices(const CameraSpec& spec);
+    bool tryOneDevice(const std::string& device);
     bool EnumFrameIntervals(int pixfmt, int width, int height);
     bool EnumFrameSizes(int pixfmt);
     bool EnumFrameFormats(const SurfaceSize& preferred);
@@ -85,8 +102,10 @@ private:
     int saveYUYVtoJPEG(uint8_t* src, uint8_t* dst, int maxsize, int width, int height, int quality);
 
 private:
-    struct vdIn *videoIn;
-    int vfd;
+    std::string  lastDevice;
+    bool         haveEnumerated;
+    struct vdIn* videoIn;
+    int          vfd;
 
     SortedVector<SurfaceDesc> m_AllFmts;        // Available video modes
     SurfaceDesc m_BestPreviewFmt;               // Best preview mode. maximum fps with biggest frame
@@ -94,6 +113,7 @@ private:
 
 };
 
+//======================================================================
 }; // namespace android
 
 #endif

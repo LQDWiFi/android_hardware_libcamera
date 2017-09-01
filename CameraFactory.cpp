@@ -170,7 +170,7 @@ int CameraFactory::parseConfig(const char* configFile)
             ALOGD("parseConfig: resolution = %s", res.c_str());
 
             if (sscanf(res.c_str(), "%dx%d", &w, &h) == 2) {
-                spec.defaultSize = SurfaceSize(w, h);
+                spec.preferredSize = SurfaceSize(w, h);
             }
         } else if (cmd == "role" && words.size() == 2) {
             auto& role = words[1];

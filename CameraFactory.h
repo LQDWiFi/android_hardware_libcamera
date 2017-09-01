@@ -18,12 +18,10 @@
 #define HW_CAMERA_CAMERA_FACTORY_H
 
 #include <hardware/hardware.h>
-#include <hardware/camera.h>
 #include <utils/Singleton.h>
-#include "CameraHardware.h"
-#include "Utils.h"
 
-#include <vector>
+#include "Utils.h"
+#include "CameraHardware.h"
 
 namespace android {
 //======================================================================
