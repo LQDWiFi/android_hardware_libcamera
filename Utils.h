@@ -44,6 +44,31 @@
 #define UTILS_H
 
 #include <stdint.h>
+#include <memory>
+#include <vector>
+#include <string>
+
+typedef std::vector<std::string> StringVec;
+
+//======================================================================
+/*  Shorthands for shared_ptr.
+*/
+
+template<typename T>
+using Ref = std::shared_ptr<T>;
+
+
+template<typename T, typename ... Args>
+static inline
+Ref<T>
+mkRef(Args&& ...args)
+{
+    return std::make_shared<T>(std::forward<Args>(args)...);
+}
+
+
+namespace utils {
+//======================================================================
 
 int jpeg_decode(uint8_t *pic,int stride, uint8_t *buf, int width, int height);
 
@@ -65,5 +90,33 @@ int jpeg_decode(uint8_t *pic,int stride, uint8_t *buf, int width, int height);
 #define ERR_DEPTH_MISMATCH 15
 
 
+// These are easier to use than the Tokenizer class.
 
+/*  Split text into lines. The new-lines are omitted.
+*/
+extern StringVec splitLines(const std::string& text);
+
+
+/*  Split text into words at white space.
+*/
+extern StringVec splitWords(const std::string& text);
+
+
+/*  See if the vector contains the word.
+*/
+extern bool contains(const StringVec& words, const std::string& word);
+
+
+/*  Read all of a file.  Returns empty if the file could
+    not be found.
+*/
+extern std::string readFile(const std::string& path);
+
+
+/*  This lists all /dev/video* device files.
+*/
+extern StringVec listVideos();
+
+//======================================================================
+}  // namespace utils
 #endif

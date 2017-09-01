@@ -13,13 +13,17 @@
 
 #include <binder/MemoryBase.h>
 #include <binder/MemoryHeapBase.h>
+#include <hardware/camera.h>
 #include <utils/SortedVector.h>
-#include <utils/String8.h>
-#include <utils/Timers.h>
+#include <utils/Timers.h>               // for nsecs_t
+
+#include "Utils.h"
 #include "uvc_compat.h"
+#include "CameraSpec.h"
 #include "SurfaceDesc.h"
 
 namespace android {
+//======================================================================
 
 static const int MaxPreviewWidth = 1920;    // a hack for certain cameras
 
@@ -44,13 +48,16 @@ struct vdIn {
 
 };
 
+
+//======================================================================
+
 class V4L2Camera {
 
 public:
     V4L2Camera();
     ~V4L2Camera();
 
-    int  Open(const String8& device);
+    int  Open(const CameraSpec& spec);
     void Close();
 
     int  Init(int width, int height, int fps);
@@ -66,7 +73,7 @@ public:
     status_t GrabRawFrame (void *frameBuffer, int maxSize, nsecs_t timeout);
 
     void getSize(int& width, int& height) const;
-    int getFps() const;
+    int  getFps() const;
 
     SortedVector<SurfaceSize> getAvailableSizes() const;
     SortedVector<int> getAvailableFps() const;
@@ -74,17 +81,21 @@ public:
     const SurfaceDesc& getBestPictureFmt() const;
 
 private:
+    bool tryDevices(const CameraSpec& spec);
+    bool tryOneDevice(const std::string& device);
     bool EnumFrameIntervals(int pixfmt, int width, int height);
     bool EnumFrameSizes(int pixfmt);
-    bool EnumFrameFormats();
+    bool EnumFrameFormats(const SurfaceSize& preferred);
     status_t dequeueBuf(nsecs_t timeout);
     status_t enqueueBuf();
 
     int saveYUYVtoJPEG(uint8_t* src, uint8_t* dst, int maxsize, int width, int height, int quality);
 
 private:
-    struct vdIn *videoIn;
-    int fd;
+    std::string  lastDevice;
+    bool         haveEnumerated;
+    struct vdIn* videoIn;
+    int          vfd;
 
     SortedVector<SurfaceDesc> m_AllFmts;        // Available video modes
     SurfaceDesc m_BestPreviewFmt;               // Best preview mode. maximum fps with biggest frame
@@ -92,6 +103,7 @@ private:
 
 };
 
+//======================================================================
 }; // namespace android
 
 #endif

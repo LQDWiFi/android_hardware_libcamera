@@ -22,7 +22,10 @@
 #include <system/camera_metadata.h>
 #include <hardware/camera.h>
 #include <utils/threads.h>
-#include <utils/String8.h>
+
+#include "Utils.h"
+#include "CameraSpec.h"
+#include "SurfaceSize.h"
 #include "V4L2Camera.h"
 
 namespace android {
@@ -91,10 +94,10 @@ public:
 
     /* Actual handler for camera_device_ops_t::preview_enabled callback.
      * NOTE: When this method is called the object is locked.
-     * Return:
+     * preview_enabled must return:
      *  0 if preview is disabled, != 0 if enabled.
      */
-    int isPreviewEnabled();
+    bool isPreviewEnabled();
 
     /* Actual handler for camera_device_ops_t::store_meta_data_in_buffers callback.
      * NOTE: When this method is called the object is locked.
@@ -187,8 +190,6 @@ public:
 
 private:
 
-    bool PowerOn();
-    bool PowerOff();
     bool NegotiatePreviewFormat(struct preview_stream_ops* win);
     nsecs_t frameTimeout();
 
@@ -198,7 +199,7 @@ public:
      *  cameraId - Zero based camera identifier, which is an index of the camera
      *      instance in camera factory's array.
      */
-    CameraHardware(char* devLocation);
+    CameraHardware(const CameraSpec& spec);
 
     /* Destructs EmulatedCamera instance. */
     virtual ~CameraHardware();
@@ -228,7 +229,7 @@ public:
      * NOTE: When this method is called the object is locked.
      * Note that failures in this method are reported as negave EXXX statuses.
      */
-    status_t getCameraInfo(struct camera_info* info, int facing, int orientation);
+    status_t getCameraInfo(struct camera_info* info);
 
 private:
 
@@ -251,7 +252,7 @@ private:
 
     static const int kBufferCount = 4;
 
-    bool tryOpenCamera(const String8& videoFile);
+    bool tryOpenCamera();
     void initStaticCameraMetadata();
     void initHeapLocked();
 
@@ -272,6 +273,8 @@ private:
     class HotPlugThread : public Thread
     {
         CameraHardware* mHardware;
+        size_t          mCheckCount;
+        bool            mStarted;
 
     public:
         HotPlugThread(CameraHardware* hw);
@@ -303,7 +306,7 @@ private:
     int                 mPreviewWinHeight;
 
     CameraParameters    mParameters;
-    String8             mVideoDevice;
+    CameraSpec          mSpec;
 
     camera_memory_t*    mRawPreviewHeap;
     int                 mRawPreviewFrameSize;

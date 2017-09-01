@@ -27,8 +27,7 @@
 
 #include <utils/Log.h>
 #include <cutils/properties.h>
-#include <fcntl.h>
-#include <sys/mman.h>
+
 #include <sys/stat.h> /* for mode definitions */
 #include <unistd.h> /* for sleep */
 
@@ -37,6 +36,8 @@
 #include "CameraHardware.h"
 #include "Converter.h"
 #include "Metadata.h"
+
+using namespace std;
 
 /*  Concurrency:
 
@@ -71,18 +72,11 @@
     The mutex allows it to communicate the ready status to the
     Android thread.
 
+    The hotplug thread doesn't start doing stuff until the camera.enable
+    property is set.  This allows an AppOS service to trigger the
+    camera system.
+
 */
-
-static bool
-isLocked(android::Mutex& mLock)
-{
-    if (mLock.tryLock() == 0) {
-        mLock.unlock();
-        return false;
-    }
-    return true;
-}
-
 
 #define ARRAY_SIZE(a) (sizeof(a) / sizeof(a[0]))
 #define UNUSED(x) ((void)(x))
@@ -159,20 +153,23 @@ isLocked(android::Mutex& mLock)
 #define PIXEL_FORMAT_YV16  0x36315659 /* YCrCb 4:2:2 Planar */
 #endif
 
-// File to control camera power
-#define CAMERA_POWER_FILE  "camera.power_file"
 
 namespace android {
+//======================================================================
+
+static const size_t     HotPlugCheckInterval    = 1;    // in seconds
+static const size_t     HotPlugComplainInterval = 30;   // in seconds
 
 
-CameraHardware::CameraHardware(char* devLocation) :
-        mReady(false),
+CameraHardware::CameraHardware(const CameraSpec& spec)
+  :     mReady(false),
         mWin(0),
         mPreviewWinFmt(PIXEL_FORMAT_UNKNOWN),
         mPreviewWinWidth(0),
         mPreviewWinHeight(0),
 
         mParameters(),
+        mSpec(spec),
 
         mRawPreviewHeap(0),
         mRawPreviewFrameSize(0),
@@ -208,9 +205,6 @@ CameraHardware::CameraHardware(char* devLocation) :
         mCameraPowerFile(0),
         mCameraMetadata(0)
 {
-    //Store the video device location
-    mVideoDevice = devLocation;
-
     // Initialize camera_device descriptor for this object.
 
     /* Common header */
@@ -222,9 +216,6 @@ CameraHardware::CameraHardware(char* devLocation) :
     /* camera_device fields. */
     ops = &mDeviceOps;
     priv = this;
-
-    // Power on camera
-    // PowerOn();
 
     // Load some initial default parmeters
     // We can skip the lock in the constructor.
@@ -281,78 +272,6 @@ CameraHardware::~CameraHardware()
         free_camera_metadata(mCameraMetadata);
         mCameraMetadata = NULL;
     }
-
-    // Power off camera
-    //PowerOff();
-}
-
-
-
-bool CameraHardware::PowerOn()
-{
-    ALOGD("PowerOn: Power ON camera.");
-
-    mCameraPowerFile = new char[PROPERTY_VALUE_MAX];
-
-    if (!property_get(CAMERA_POWER_FILE, mCameraPowerFile, "")) {
-        ALOGD("PowerOn: no power_file set");
-        delete [] mCameraPowerFile;
-        mCameraPowerFile = 0;
-        return true;
-    }
-
-    // power on camera
-    int handle = ::open(mCameraPowerFile,O_RDWR);
-    if (handle >= 0) {
-        ::write(handle,"1\n",2);
-        ::close(handle);
-    } else {
-        ALOGE("Could not open %s for writing.", mCameraPowerFile);
-        return false;
-    }
-
-    // Wait until the camera is recognized or timed out
-    int timeOut = 500;
-    do {
-        // Try to open the video capture device
-        handle = ::open(mVideoDevice.string(),O_RDWR);
-        if (handle >= 0)
-            break;
-        // Wait a bit
-        ::usleep(10000);
-    } while (--timeOut > 0);
-
-    if (handle >= 0) {
-        ALOGD("Camera powered on");
-        ::close(handle);
-        return true;
-    } else {
-        ALOGE("Unable to power camera");
-    }
-
-    return false;
-}
-
-
-
-bool CameraHardware::PowerOff()
-{
-    ALOGD("CameraHardware::PowerOff: Power OFF camera.");
-
-    if (!mCameraPowerFile)
-        return true;
-    // power on camera
-    int handle = ::open(mCameraPowerFile,O_RDWR);
-    if (handle >= 0) {
-        ::write(handle,"0\n",2);
-        ::close(handle);
-    } else {
-        ALOGE("Could not open %s for writing.", mCameraPowerFile);
-        return false;
-    }
-    delete [] mCameraPowerFile;
-    mCameraPowerFile = 0;
-    return true;
 }
 
 
@@ -391,7 +310,9 @@ bool CameraHardware::NegotiatePreviewFormat(struct preview_stream_ops* win)
 
 
 CameraHardware::HotPlugThread::HotPlugThread(CameraHardware* hw)
-  : mHardware(hw)
+  : mHardware   (hw),
+    mCheckCount (0),
+    mStarted    (false)
 {
 }
 
@@ -408,10 +329,23 @@ bool CameraHardware::HotPlugThread::threadLoop()
 {
     /*  The thread will be terminated after the camera has been opened.
     */
-    auto ok = mHardware->tryOpenCamera(mHardware->mVideoDevice);
+    if (!mStarted) {
+        mStarted = property_get_bool("camera.enable", false);
+
+        if (!mStarted) {
+            // Try again later
+            ::usleep(HotPlugCheckInterval * 1000 * 1000);
+            return true;
+        }
+    }
+
+    auto ok = mHardware->tryOpenCamera();
 
     if (!ok) {
-        ::usleep(1000 * 1000);
+        if (mCheckCount++ % HotPlugComplainInterval == 0) {
+            ALOGI("did not open any camera");
+        }
+        ::usleep(HotPlugCheckInterval * 1000 * 1000);
     }
 
     return !ok;
@@ -443,12 +377,11 @@ status_t CameraHardware::closeCamera()
 
 
 
-status_t CameraHardware::getCameraInfo(struct camera_info* info, int facing,
-                                       int orientation)
+status_t CameraHardware::getCameraInfo(struct camera_info* info)
 {
     ALOGD("getCameraInfo");
-    info->facing = facing;
-    info->orientation = orientation;
+    info->facing = mSpec.facing;
+    info->orientation = mSpec.orientation;
     info->device_version = CAMERA_DEVICE_API_VERSION_1_0;
     info->static_camera_characteristics = mCameraMetadata;      // REVISIT not used?
 
@@ -459,30 +392,26 @@ status_t CameraHardware::getCameraInfo(struct camera_info* info, int facing,
 
 status_t CameraHardware::setPreviewWindow(struct preview_stream_ops* window)
 {
-    ALOGD("setPreviewWindow: preview_stream_ops: %p", window);
-    {
-        Mutex::Autolock lock(mLock);
+    Mutex::Autolock lock(mLock);
 
-        if (window != NULL) {
-            /* The CPU will write each frame to the preview window buffer.
-             * Note that we delay setting preview window buffer geometry until
-             * frames start to come in. */
-            status_t res = window->set_usage(window, GRALLOC_USAGE_SW_WRITE_OFTEN);
-            if (res != NO_ERROR) {
-                res = -res; // set_usage returns a negative errno.
-                ALOGE("setPreviewWindow: Error setting preview window usage %d -> %s", res, strerror(res));
-                return res;
-            }
+    if (window != NULL) {
+        /* The CPU will write each frame to the preview window buffer.
+         * Note that we delay setting preview window buffer geometry until
+         * frames start to come in. */
+        status_t res = window->set_usage(window, GRALLOC_USAGE_SW_WRITE_OFTEN);
+        if (res != NO_ERROR) {
+            res = -res; // set_usage returns a negative errno.
+            ALOGE("setPreviewWindow: Error setting preview window usage %d -> %s", res, strerror(res));
+            return res;
         }
+    }
 
-        mWin = window;
+    mWin = window;
 
-        // setup the preview window geometry to be able to use the full preview window
-        if (mPreviewThread != 0 && mWin != 0) {
-            ALOGD("setPreviewWindow - Negotiating preview format");
-            NegotiatePreviewFormat(mWin);
-        }
-
+    // setup the preview window geometry to be able to use the full preview window
+    if (mPreviewThread != 0 && mWin != 0) {
+        ALOGD("setPreviewWindow - Negotiating preview format");
+        NegotiatePreviewFormat(mWin);
     }
 
     return NO_ERROR;
@@ -496,8 +425,6 @@ void CameraHardware::setCallbacks(camera_notify_callback notify_cb,
                                   camera_request_memory get_memory,
                                   void* user)
 {
-    ALOGD("setCallbacks");
-
     Mutex::Autolock lock(mLock);
 
     mNotifyCb = notify_cb;
@@ -650,7 +577,7 @@ status_t CameraHardware::startPreviewLocked()
     //ALOGD("startPreviewLocked");
 
     if (!mReady) {
-        ALOGD("startPreviewLocked: camera not ready");
+        ALOGE("preview: the camera is not ready");
         return NO_INIT;
     }
 
@@ -671,7 +598,7 @@ status_t CameraHardware::startPreviewLocked()
 
     int fps = mParameters.getPreviewFrameRate();
 
-    status_t ret = camera.Open(mVideoDevice);
+    status_t ret = camera.Open(mSpec);
     if (ret != NO_ERROR) {
         ALOGE("startPreviewLocked: Failed to initialize Camera");
         return ret;
@@ -758,9 +685,9 @@ void CameraHardware::stopPreview()
 
 
 
-int CameraHardware::isPreviewEnabled()
+bool CameraHardware::isPreviewEnabled()
 {
-    int enabled = 0;
+    bool enabled = false;
     {
         Mutex::Autolock lock(mLock);
         enabled = (mPreviewThread != 0);
@@ -1046,39 +973,37 @@ status_t CameraHardware::dumpCamera(int fd)
 // ---------------------------------------------------------------------------
 
 
-bool CameraHardware::tryOpenCamera(const String8& videoFile)
+bool CameraHardware::tryOpenCamera()
 {
     /*  This will be called from the hotplug thread to try to
         open the video file.  It may take a long time for the camera to
         be enumerated.
-        
+
         This returns true if the parameters are set.
     */
+    //ALOGD("tryOpenCamera");
+
     FromCamera fc;
 
-    ALOGD("tryOpenCamera");
+    if (camera.Open(mSpec) == NO_ERROR) {
+        // Get the default preview format
+        fc.pw = camera.getBestPreviewFmt().getWidth();
+        fc.ph = camera.getBestPreviewFmt().getHeight();
+        fc.pfps = camera.getBestPreviewFmt().getFps();
 
-    if (camera.Open(videoFile) != NO_ERROR) {
-        ALOGI("did not open %s", videoFile.string());
+        // Get the default picture format
+        fc.fw = camera.getBestPictureFmt().getWidth();
+        fc.fh = camera.getBestPictureFmt().getHeight();
+
+        // Get all the available sizes
+        fc.avSizes = camera.getAvailableSizes();
+
+        // Get all the available Fps
+        fc.avFps = camera.getAvailableFps();
+
+    } else {
         return false;
     }
-
-    ALOGI("opened %s", videoFile.string());
-
-    // Get the default preview format
-    fc.pw = camera.getBestPreviewFmt().getWidth();
-    fc.ph = camera.getBestPreviewFmt().getHeight();
-    fc.pfps = camera.getBestPreviewFmt().getFps();
-
-    // Get the default picture format
-    fc.fw = camera.getBestPictureFmt().getWidth();
-    fc.fh = camera.getBestPictureFmt().getHeight();
-
-    // Get all the available sizes
-    fc.avSizes = camera.getAvailableSizes();
-
-    // Get all the available Fps
-    fc.avFps = camera.getAvailableFps();
 
     Mutex::Autolock lock(mLock);
 
@@ -1088,7 +1013,7 @@ bool CameraHardware::tryOpenCamera(const String8& videoFile)
     /*  This will call setParametersLocked() which will
         start the preview thread.
     */
-    auto ok = fc.set(*this);
+    bool ok = fc.set(*this);
 
     // Signal that the camera is ready.
     mReadyCond.broadcast();
@@ -2044,6 +1969,11 @@ int CameraHardware::pictureThread()
     {
         Mutex::Autolock lock(mLock);
 
+        if (!mReady) {
+            ALOGE("take_picture: the camera is not yet ready");
+            return NO_INIT;
+        }
+
         int w, h;
         mParameters.getPictureSize(&w, &h);
         ALOGD("pictureThread: taking picture of %dx%d", w, h);
@@ -2060,7 +1990,7 @@ int CameraHardware::pictureThread()
 
         ALOGD("pictureThread: taking picture (%d x %d)", w, h);
 
-        if (camera.Open(mVideoDevice) == NO_ERROR) {
+        if (camera.Open(mSpec) == NO_ERROR) {
             camera.Init(w, h, 1);
 
             /* Retrieve the real size being used */

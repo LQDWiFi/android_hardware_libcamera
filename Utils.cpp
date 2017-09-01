@@ -40,11 +40,26 @@
  */
 
 #include "Utils.h"
+#include <errno.h>
+#include <dirent.h>
 #include <malloc.h>
-#include <string.h>
 
+#include <cstring>
+#include <cctype>
+
+#include <fcntl.h>
+#include <stdlib.h>
+#include <unistd.h>
+
+#undef LOG_TAG
 #define LOG_TAG "CameraHardware"
 #include <utils/Log.h>
+
+using namespace std;
+
+
+namespace utils {
+//======================================================================
 
 /*clip value between 0 and 255*/
 #define CLIP(value) (uint8_t)(((value)>0xFF)?0xff:(((value)<0)?0:(value)))
@@ -1306,3 +1321,155 @@ static void idctqtab(uint8_t *qin,PREC *qout)
 			qout[zig[i * 8 + j]] = qin[zig[i * 8 + j]] *
 				IMULT(aaidct[i], aaidct[j]);
 }
+
+
+//======================================================================
+
+StringVec splitLines(const string& text)
+{
+    StringVec result;
+    auto* p = text.c_str();
+
+    while (*p) {
+        if (auto q = std::strchr(p, '\n')) {
+            result.emplace_back(p, q - p);
+            p = q + 1;
+        } else {
+            result.emplace_back(p);
+            break;
+        }
+    }
+
+    return result;
+}
+
+
+
+StringVec splitWords(const string& text)
+{
+    // Split words at white space
+    StringVec words;
+    bool inWS = true;
+    const char* p = text.c_str();
+    const char* w = 0;
+
+    for ( ; *p; ++p) {
+        if (std::isspace(*p)) {
+            if (!inWS) {
+                // End of the word
+                words.emplace_back(w, p - w);
+                w = 0;
+                inWS = true;
+            }
+        } else {
+            if (inWS) {
+                w = p;
+                inWS = false;
+            }
+        }
+    }
+
+    if (w) {
+        // the trailing word
+        words.emplace_back(w);
+    }
+
+    return words;
+}
+
+
+
+bool contains(const StringVec& words, const std::string& word)
+{
+    for (auto& w : words) {
+        if (w == word) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+
+
+string readFile(const string& path)
+{
+    string result;
+    bool error = false;
+
+    int fd = ::open(path.c_str(), O_RDONLY);
+
+    if (fd >= 0) {
+        static const size_t ChunkSize = 8192;
+        char buf[ChunkSize + 1];
+
+        while (!error) {
+            int n = ::read(fd, buf, ChunkSize);
+
+            if (n > 0) {
+                buf[n] = 0;
+                result.append(buf);
+            } else
+            if (n == 0) {
+                break;
+            } else
+            if (errno == EINTR) {
+                continue;
+            } else {
+                // the only error indication
+                error = true;
+            }
+        }
+
+        ::close(fd);
+    } else {
+        error = true;
+    }
+
+    if (error) {
+        return "";
+    }
+
+    return result;
+}
+
+
+
+StringVec listVideos()
+{
+    StringVec result;
+    string    path = "/dev";
+
+    if (auto* dir = opendir(path.c_str())) {
+        auto name_max = pathconf(path.c_str(), _PC_NAME_MAX);
+
+        if (name_max == -1) {       /* Limit not defined, or error */
+            name_max = 255;         /* Take a guess */
+        }
+        auto len = offsetof(struct dirent, d_name) + name_max + 1;
+
+        dirent* entry = (dirent*)malloc(len);
+        dirent* found;
+
+        for (;;) {
+            readdir_r(dir, entry, &found);
+
+            if (!found) {
+                break;
+            }
+
+            if (strncmp(found->d_name, "video", 5) == 0) {
+                result.push_back(path + "/" + found->d_name);
+            }
+        }
+
+        free(entry);
+        closedir(dir);
+    }
+
+    return result;
+}
+
+
+//======================================================================
+}  // namespace utils
