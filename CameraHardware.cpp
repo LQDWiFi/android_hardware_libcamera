@@ -1062,7 +1062,7 @@ bool CameraHardware::FromCamera::set(CameraHardware& ch)
     for (size_t i = 0; i < avFps.size(); i++) {
         char descr[32];
         int ss = avFps[i];
-        sprintf(descr,"(%d,%d)",ss,ss);
+        sprintf(descr,"(%d,%d)",ss*1000,ss*1000); // FPS ranges are scaled by 1000
         fpsranges.append(descr);
         if (i < avFps.size() - 1) {
             fpsranges.append(",");
@@ -1180,7 +1180,7 @@ void CameraHardware::initStaticCameraMetadata()
     Metadata m;
 
     /* android.control */
-    int32_t android_control_ae_available_target_fps_ranges[] = {30, 30};
+    int32_t android_control_ae_available_target_fps_ranges[] = {30 * 1000, 30 * 1000};
     m.addInt32(ANDROID_CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES,
             ARRAY_SIZE(android_control_ae_available_target_fps_ranges),
             android_control_ae_available_target_fps_ranges);
