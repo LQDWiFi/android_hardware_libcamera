@@ -578,6 +578,9 @@ status_t CameraHardware::startPreviewLocked()
 
     if (!mReady) {
         ALOGE("preview: the camera is not ready");
+        if (!property_get_bool("camera.enable", false)) {
+            ALOGE("preview: the camera.enable property is false! Maybe you want to enable the camera?");
+        }
         return NO_INIT;
     }
 
