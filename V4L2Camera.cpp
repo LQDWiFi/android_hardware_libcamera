@@ -74,7 +74,6 @@ int V4L2Camera::Open(const CameraSpec& spec)
     Close();
 
     if (!tryDevices(spec)) {
-        ALOGW("no camera device has been found");
         return -1;
     }
 
@@ -122,13 +121,11 @@ bool V4L2Camera::tryDevices(const CameraSpec& spec)
         }
 
         if (utils::contains(spec.nodevices, v)) {
-            ALOGD("tryDevices: skipping %s", v.c_str());
             continue;
         }
 
         if (tryOneDevice(v)) {
             ok = true;
-            ALOGI("opened %s", v.c_str());
             lastDevice = v;
             break;
         }
@@ -144,15 +141,26 @@ bool V4L2Camera::tryOneDevice(const string& device)
     bool ok = false;
 
     vfd = open(device.c_str(), O_RDWR | O_NOCTTY);
-
     if (vfd >= 0) {
+        ALOGI("%s: Opened as fd %d", device.c_str(), vfd);
 
         memset(videoIn, 0, sizeof (struct vdIn));
 
         if (ioctl(vfd, VIDIOC_QUERYCAP, &videoIn->cap) >= 0) {
             ok = videoIn->cap.capabilities & V4L2_CAP_VIDEO_CAPTURE &&
                  videoIn->cap.capabilities & V4L2_CAP_STREAMING;
+            if (!ok) {
+                ALOGW("%s: Doesn't support streaming!", device.c_str());
+            }
+        } else {
+            ALOGW("%s: Failed to query capabilities (%d: %s)", device.c_str(), errno, strerror(errno));
         }
+        if (!ok) {
+            close(vfd);
+            vfd = -1;
+        }
+    } else {
+        ALOGW("%s: Failed to open (%d: %s)", device.c_str(), errno, strerror(errno));
     }
 
     return ok;
@@ -169,12 +177,11 @@ void V4L2Camera::Close ()
     }
 
     /* Close the file descriptor */
-    if (vfd > 0) {
+    if (vfd >= 0) {
+        ALOGD("Closed fd %d", vfd);
         close(vfd);
         vfd = -1;
     }
-
-    ALOGD("Closed");
 }
 
 
