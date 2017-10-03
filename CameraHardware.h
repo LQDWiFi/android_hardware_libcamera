@@ -186,6 +186,8 @@ public:
     void releaseCamera();
 
 
+    void reportError(int code);
+
     status_t dumpCamera(int fd);
 
 private:
