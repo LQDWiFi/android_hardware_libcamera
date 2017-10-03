@@ -567,7 +567,14 @@ void CameraHardware::PreviewThread::onFirstRef()
 
 bool CameraHardware::PreviewThread::threadLoop()
 {
-    return mHardware->previewThread();
+    bool ok = mHardware->previewThread();
+
+    // This will be outside of any locks. The streaming has stopped.
+    if (!ok) {
+        mHardware->reportError(1000);
+    }
+
+    return ok;
 }
 
 
@@ -960,6 +967,16 @@ void CameraHardware::releaseCamera()
     ALOGD("releaseCamera");
     if (mPreviewThread != 0) {
         stopPreview();
+    }
+}
+
+
+
+void
+CameraHardware::reportError(int code)
+{
+    if (mMsgEnabled & CAMERA_MSG_ERROR) {
+        mNotifyCb(CAMERA_MSG_ERROR, code, 0, mCallbackCookie);
     }
 }
 
