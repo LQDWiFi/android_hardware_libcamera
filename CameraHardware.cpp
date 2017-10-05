@@ -84,6 +84,9 @@ using namespace std;
 #define MIN_WIDTH       320
 #define MIN_HEIGHT      240
 
+// If we get this number of successive frame timeouts we will give up.
+#define LOST_FRAME_LIMIT    100
+
 #ifndef PIXEL_FORMAT_RGB_888
 #define PIXEL_FORMAT_RGB_888 3 /* */
 #endif
@@ -202,6 +205,8 @@ CameraHardware::CameraHardware(const CameraSpec& spec)
         mMsgEnabled(0),
         mCurrentPreviewFrame(0),
         mCurrentRecordingFrame(0),
+        mTimeoutCount(0),
+        mTimeoutLimit(LOST_FRAME_LIMIT),
         mCameraPowerFile(0),
         mCameraMetadata(0)
 {
@@ -567,14 +572,7 @@ void CameraHardware::PreviewThread::onFirstRef()
 
 bool CameraHardware::PreviewThread::threadLoop()
 {
-    bool ok = mHardware->previewThread();
-
-    // This will be outside of any locks. The streaming has stopped.
-    if (!ok) {
-        mHardware->reportError(1000);
-    }
-
-    return ok;
+    return mHardware->previewThread();
 }
 
 
@@ -649,6 +647,9 @@ status_t CameraHardware::startPreviewLocked()
         ALOGD("CameraHardware::setPreviewWindow - Negotiating preview format");
         NegotiatePreviewFormat(mWin);
     }
+
+    // Starting from scratch
+    mTimeoutCount = 0;
 
     ALOGD("startPreviewLocked: starting the preview thread");
     mPreviewThread = new PreviewThread(this);
@@ -1634,6 +1635,7 @@ bool CameraHardware::previewThread()
     // If no raw preview buffer, we can't do anything...
     if (mRawPreviewBuffer == 0) {
         ALOGE("No Raw preview buffer!");
+        reportError(CAMERA_ERROR_UNKNOWN);
         return false;
     }
 
@@ -1645,6 +1647,7 @@ bool CameraHardware::previewThread()
     // If no preview buffer, we cant do anything...
     if (frame == 0) {
         ALOGE("No preview buffer!");
+        reportError(CAMERA_ERROR_UNKNOWN);
         return false;
     }
 
@@ -1659,14 +1662,21 @@ bool CameraHardware::previewThread()
     auto status = camera.GrabRawFrame(rawBase, mRawPreviewFrameSize, frameTimeout());
 
     if (status == TIMED_OUT) {
+        if (mTimeoutLimit > 0 && ++mTimeoutCount == mTimeoutLimit) {
+            reportError(1001);   // report the timeout
+        }
         return true;
     }
 
     if (!(status == NO_ERROR || status == NOT_ENOUGH_DATA)) {
         // Give up
         ALOGE("The camera has failed");
+        reportError(1000);
         return false;
     }
+
+    // We've got a frame
+    mTimeoutCount = 0;
 
     // If the recording is enabled...
     if (mRecordingEnabled && mMsgEnabled & CAMERA_MSG_VIDEO_FRAME) {
