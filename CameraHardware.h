@@ -351,6 +351,8 @@ private:
     // only used from PreviewThread
     int                 mCurrentPreviewFrame;
     int                 mCurrentRecordingFrame;
+    int                 mTimeoutCount;
+    int                 mTimeoutLimit;
 
     char*               mCameraPowerFile;
 
