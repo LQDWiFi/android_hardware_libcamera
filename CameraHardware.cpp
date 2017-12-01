@@ -785,7 +785,7 @@ int CameraHardware::isRecordingEnabled()
 void CameraHardware::releaseRecordingFrame(const void* mem)
 {
     UNUSED(mem);
-    ALOGD("releaseRecordingFrame");
+    //ALOGD("releaseRecordingFrame");
 }
 
 
