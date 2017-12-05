@@ -785,7 +785,7 @@ int CameraHardware::isRecordingEnabled()
 void CameraHardware::releaseRecordingFrame(const void* mem)
 {
     UNUSED(mem);
-    ALOGD("releaseRecordingFrame");
+    //ALOGD("releaseRecordingFrame");
 }
 
 
@@ -1141,10 +1141,10 @@ bool CameraHardware::FromCamera::set(CameraHardware& ch)
     p.set(CameraParameters::KEY_SUPPORTED_PREVIEW_SIZES, szs);
     p.setPreviewSize(pw,ph);
 
-    // Video - Supporting yuv422i-yuyv,yuv422sp,yuv420sp and defaulting to yuv420p
+    // Video - Supporting yuv422i-yuyv,yuv422sp,yuv420sp and defaulting to yuv420sp as above
     p.set("video-size-values"/*CameraParameters::KEY_SUPPORTED_VIDEO_SIZES*/, szs);
     p.setVideoSize(pw,ph);
-    p.set(CameraParameters::KEY_VIDEO_FRAME_FORMAT, CameraParameters::PIXEL_FORMAT_YUV420P);
+    p.set(CameraParameters::KEY_VIDEO_FRAME_FORMAT, CameraParameters::PIXEL_FORMAT_YUV420SP);
     p.set("preferred-preview-size-for-video", "640x480");
 
     // supported rotations
