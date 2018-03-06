@@ -70,6 +70,13 @@ int CameraSpec::loadFromFile(const char* configFile)
             } else if (role == "back") {
                 facing = CAMERA_FACING_BACK;
             }
+        } else if (cmd == "orientation" && words.size() == 2) {
+            auto& o = words[1];
+            if      (o == "0")    orientation = 0;
+            else if (o == "90")   orientation = 90;
+            else if (o == "180")  orientation = 180;
+            else if (o == "270")  orientation = 270;
+            else ALOGW("loadFromFile: orientation should be 0, 90, 180 or 270. Not %s", o.c_str());
         } else {
             ALOGD("Unrecognized config line '%s'", line.c_str());
         }
